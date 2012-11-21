@@ -1,0 +1,159 @@
+#ifndef GEN_UTP_UTP_SOCK_H
+#define GEN_UTP_UTP_SOCK_H
+
+// -------------------------------------------------------------------
+//
+// utp_sock.h: uTP socket wrapper
+//
+// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+//
+// This file is provided to you under the Apache License,
+// Version 2.0 (the "License"); you may not use this file
+// except in compliance with the License.  You may obtain
+// a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+//
+// -------------------------------------------------------------------
+
+#include <map>
+#include "erl_driver.h"
+#include "libutp/utp.h"
+#include "locker.h"
+
+extern ErlDrvMutex* utp_mutex;
+extern char* utp_drv_name;
+
+typedef sockaddr_storage SockAddr;
+
+class UtpSock {
+public:
+    UtpSock();
+    ~UtpSock();
+
+    int fd() const { return udp; }
+
+    void start_connect(UTPSocket* utp, ErlDrvPort drv_port,
+                       ErlDrvTermData pid, ErlDrvBinary* from);
+
+    void close()
+    {
+        Locker lock(utp_mutex);
+        UTP_Close(sock);
+    }
+
+    bool peeraddr(SockAddr&) const;
+
+    void erl_port(ErlDrvPort dp) { drv_port = dp; }
+
+    bool write(const ErlDrvBinary& bin, bool writable)
+    {
+#if 0
+        if (bin.size > 0) {
+            ErlDrvBinary newbin;
+            enif_alloc_binary(bin.size, &newbin);
+            memcpy(newbin.data, bin.data, bin.size);
+            writes.push_back(newbin);
+            write_count += newbin.size;
+        }
+        if (writable && write_count > 0) {
+            Locker lock(utp_mutex);
+            writable = UTP_Write(sock, write_count);
+        }
+#endif
+        return writable;
+    }
+
+    int error_value() const { return error_code; }
+
+    void do_send_to(const byte* p, size_t len, const sockaddr* to,
+                    socklen_t slen);
+    void do_read(const byte* bytes, size_t count);
+    void do_write(byte* bytes, size_t count);
+    size_t do_get_rb_size();
+    void do_state_change(int state);
+    void do_error(int errcode);
+    void do_overhead(bool send, size_t count, int type);
+    void do_incoming(UTPSocket* utp);
+
+    static void read_ready(int fd);
+
+    static void send_to(void* data, const byte* p, size_t len,
+                        const sockaddr* to, socklen_t slen)
+    {
+        (static_cast<UtpSock*>(data))->do_send_to(p, len, to, slen);
+    }
+    static void utp_read(void* data, const byte* bytes, size_t count)
+    {
+        (static_cast<UtpSock*>(data))->do_read(bytes, count);
+    }
+    static void utp_write(void* data, byte* bytes, size_t count)
+    {
+        (static_cast<UtpSock*>(data))->do_write(bytes, count);
+    }
+    static size_t utp_get_rb_size(void* data)
+    {
+        return (static_cast<UtpSock*>(data))->do_get_rb_size();
+    }
+    static void utp_state_change(void* data, int state)
+    {
+        (static_cast<UtpSock*>(data))->do_state_change(state);
+    }
+    static void utp_error(void* data, int errcode)
+    {
+        (static_cast<UtpSock*>(data))->do_error(errcode);
+    }
+    static void utp_overhead(void* data, bool send, size_t count, int type)
+    {
+        (static_cast<UtpSock*>(data))->do_overhead(send, count, type);
+    }
+    static void utp_incoming(void* data, UTPSocket* utp)
+    {
+        (static_cast<UtpSock*>(data))->do_incoming(utp);
+    }
+
+    static bool addrport_to_sockaddr(const char* addr, unsigned short port,
+                                     SockAddr& sa);
+    static bool sockaddr_to_addrport(const SockAddr& sa, socklen_t slen,
+                                     char* addr, size_t addrlen,
+                                     unsigned short& port);
+
+private:
+    void set_callbacks();
+
+    enum State {
+        sock_connecting,
+        sock_connected,
+        sock_closing,
+        sock_closed,
+        sock_error
+    };
+
+    typedef std::map<int, UtpSock*> FdMap;
+    static ErlDrvMutex* map_mutex;
+    static FdMap fdmap;
+
+    ErlDrvPort drv_port, my_port;
+    ErlDrvTermData drv_owner;
+    ErlDrvBinary* from;
+    UTPSocket* sock;
+    size_t write_count;
+    State sock_state;
+    int udp;
+    int error_code;
+    int utp_state;
+    bool connected;
+
+    UtpSock(const UtpSock&);
+    void operator=(const UtpSock&);
+};
+
+
+#endif

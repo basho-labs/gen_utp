@@ -1,0 +1,12 @@
+{application, gen_utp,
+ [
+  {description, "uTP Protocol"},
+  {vsn, "0.2.0"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, [
+        ]}
+ ]}.

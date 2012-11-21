@@ -1,0 +1,6 @@
+ebin/*
+priv/*
+c_src/*.o
+c_src/libutp
+.DS_Store
+*~

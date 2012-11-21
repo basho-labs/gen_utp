@@ -1,0 +1,330 @@
+// -------------------------------------------------------------------
+//
+// utp_sock.cc: uTP socket wrapper
+//
+// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+//
+// This file is provided to you under the Apache License,
+// Version 2.0 (the "License"); you may not use this file
+// except in compliance with the License.  You may obtain
+// a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+//
+// -------------------------------------------------------------------
+
+#include <cstring>
+#include <cstdio>
+#include <cassert>
+#include <cerrno>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <fcntl.h>
+#include "utp_sock.h"
+#include "locker.h"
+
+ErlDrvMutex* UtpSock::map_mutex = erl_drv_mutex_create(utp_drv_name);
+UtpSock::FdMap UtpSock::fdmap;
+
+static void send_error_atom(ErlDrvPort port, ErlDrvTermData pid,
+                            const char* errstr, const ErlDrvBinary* from);
+
+
+UtpSock::UtpSock() : sock(0), write_count(0), error_code(0),
+                     utp_state(-1), connected(false)
+{
+    if ((udp = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+        throw(errno);
+    }
+    int flags = fcntl(udp, F_GETFL);
+    flags |= O_NONBLOCK;
+    fcntl(udp, F_SETFL, flags);
+    FdMap::value_type val(udp, this);
+    Locker lock(utp_mutex);
+    fdmap.insert(val);
+}
+
+UtpSock::~UtpSock()
+{
+    if (udp >= 0) {
+        if (sock_state == sock_connecting || sock_state == sock_connected) {
+            driver_select(drv_port, reinterpret_cast<ErlDrvEvent>(udp), ERL_DRV_USE, 0);
+        }
+        Locker lock(map_mutex);
+        fdmap.erase(udp);
+    }
+}
+
+void
+UtpSock::start_connect(UTPSocket* utp, ErlDrvPort drv_port, ErlDrvTermData pid, ErlDrvBinary* f)
+{
+    assert(!connected);
+    sock = utp;
+    sock_state = sock_connecting;
+    drv_owner = pid;
+    from = f;
+    Locker lock(utp_mutex);
+    set_callbacks();
+    UTP_Connect(sock);
+}
+
+void
+UtpSock::read_ready(int fd)
+{
+    FdMap::iterator it;
+    {
+        Locker lock(map_mutex);
+        it = fdmap.find(fd);
+    }
+    if (it != fdmap.end()) {
+        byte buf[4096];
+        SockAddr addr;
+        socklen_t salen = sizeof addr;
+        int len = recvfrom(fd, buf, sizeof buf, 0, reinterpret_cast<sockaddr*>(&addr), &salen);
+        if (len > 0) {
+            Locker lock(utp_mutex);
+            UTP_IsIncomingUTP(&UtpSock::utp_incoming, &UtpSock::send_to, it->second,
+                              buf, len, reinterpret_cast<sockaddr*>(&addr), salen);
+        }
+    }
+}
+
+void
+UtpSock::do_send_to(const byte* p, size_t len, const sockaddr* to, socklen_t slen)
+{
+    printf("called do_send_to for size %ld\r\n", len);
+    fflush(stdout);
+    if (sendto(udp, p, len, 0, to, slen) < 0) {
+        error_code = errno;
+    }
+}
+
+void
+UtpSock::do_read(const byte* bytes, size_t count)
+{
+    printf("called do_read for size %ld\r\n", count);
+    fflush(stdout);
+#if 0
+    ErlNifBinary bin;
+    enif_alloc_binary(count, &bin);
+    memcpy(bin.data, bytes, count);
+    ERL_NIF_TERM bin_term = enif_make_binary(msg_env, &bin);
+    enif_release_binary(&bin);
+    ERL_NIF_TERM msg = enif_make_tuple3(msg_env, ATOM_READ,
+                                        copy_ref(msg_env), bin_term);
+    send_msg(msg);
+#endif
+}
+
+void
+UtpSock::do_write(byte* bytes, size_t count)
+{
+    printf("called do_write for size %ld\r\n", count);
+    fflush(stdout);
+#if 0
+    while (count > 0) {
+        ErlNifBinary& bin = writes.front();
+        if (bin.size <= count) {
+            memcpy(bytes, bin.data, bin.size);
+            write_count -= bin.size;
+            writes.pop_front();
+            count -= bin.size;
+            bytes += bin.size;
+        } else {
+            memcpy(bytes, bin.data, count);
+            ErlNifBinary newbin;
+            size_t newsz = bin.size - count;
+            enif_alloc_binary(newsz, &newbin);
+            memcpy(newbin.data, bin.data + count, newsz);
+            writes.pop_front();
+            writes.push_front(newbin);
+            count = 0;
+        }
+        enif_release_binary(&bin);
+    }
+#endif
+}
+
+size_t
+UtpSock::do_get_rb_size()
+{
+    return 0;
+}
+
+void
+UtpSock::do_state_change(int s)
+{
+    printf("called do_state_change for state %d\r\n", s);
+    fflush(stdout);
+    if (utp_state == s) return;
+    utp_state = s;
+    switch (utp_state) {
+    case UTP_STATE_EOF:
+        connected = false;
+        break;
+
+    case UTP_STATE_WRITABLE:
+        break;
+
+    case UTP_STATE_CONNECT:
+        assert(sock_state == sock_connecting);
+        sock_state = sock_connected;
+        connected = true;
+        my_port = driver_create_port(drv_port, drv_owner, utp_drv_name,
+                                     reinterpret_cast<ErlDrvData>(this));
+        {
+            ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(from->orig_bytes);
+            ErlDrvTermData term[] = {
+                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
+                ERL_DRV_PORT, driver_mk_port(my_port),
+                ERL_DRV_EXT2TERM, ext, from->orig_size,
+                ERL_DRV_TUPLE, 3,
+            };
+            driver_send_term(drv_port, drv_owner, term, sizeof term/sizeof *term);
+            driver_free_binary(from);
+        }
+        break;
+
+    case UTP_STATE_DESTROYING:
+        break;
+    }
+}
+
+void
+UtpSock::do_error(int errcode)
+{
+    printf("called do_error for error %d\r\n", errcode);
+    fflush(stdout);
+    error_code = errcode;
+    switch (sock_state) {
+    case sock_connecting:
+        sock_state = sock_error;
+        send_error_atom(drv_port, drv_owner, erl_errno_id(error_code), from);
+        driver_free_binary(from);
+        delete this;
+        break;
+    case sock_connected:
+    case sock_closing:
+    case sock_closed:
+    case sock_error:
+        break;
+    }
+}
+
+void
+UtpSock::do_overhead(bool send, size_t count, int type)
+{
+//    printf("called do_overhead for size %ld type %d send %d\r\n", count, type, send);
+//    fflush(stdout);
+}
+
+void
+UtpSock::do_incoming(UTPSocket* utp)
+{
+    printf("called do_incoming");
+    fflush(stdout);
+#if 0
+    sock = utp;
+    set_callbacks();
+    SockAddr addr;
+    socklen_t addrlen;
+    UTP_GetPeerName(utp, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+    char str[INET6_ADDRSTRLEN];
+    unsigned short port;
+    sockaddr_to_addrport(*reinterpret_cast<sockaddr*>(&addr), addrlen,
+                         str, sizeof str, port);
+    ERL_NIF_TERM res = enif_make_resource(msg_env, this);
+    ERL_NIF_TERM addr_term = enif_make_string(msg_env, str, ERL_NIF_LATIN1);
+    ERL_NIF_TERM port_term = enif_make_uint(msg_env, port);
+    ERL_NIF_TERM addrport = enif_make_tuple2(msg_env, addr_term, port_term);
+    ERL_NIF_TERM msg = enif_make_tuple4(msg_env, ATOM_UTP, res, copy_ref(msg_env), addrport);
+    send_msg(msg);
+#endif
+}
+
+bool
+UtpSock::addrport_to_sockaddr(const char* addr, unsigned short port,
+                              SockAddr& sa_arg)
+{
+    memset(&sa_arg, 0, sizeof sa_arg);
+    sockaddr* sa = reinterpret_cast<sockaddr*>(&sa_arg);
+    addrinfo hints;
+    addrinfo *ai;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_flags = AI_NUMERICHOST;
+    if (getaddrinfo(addr, 0, &hints, &ai) != 0) {
+        return false;
+    }
+    bool result = true;
+    memcpy(sa, ai->ai_addr, ai->ai_addrlen);
+    if (sa->sa_family == AF_INET) {
+        sockaddr_in* sa_in = reinterpret_cast<sockaddr_in*>(sa);
+        sa_in->sin_port = htons(port);
+    } else if (sa->sa_family == AF_INET6) {
+        sockaddr_in6* sa_in6 = reinterpret_cast<sockaddr_in6*>(sa);
+        sa_in6->sin6_port = htons(port);
+    } else {
+        result = false;
+    }
+    freeaddrinfo(ai);
+    return result;
+}
+
+bool
+UtpSock::sockaddr_to_addrport(const SockAddr& sa_arg, socklen_t slen,
+                              char* addr, size_t addrlen, unsigned short& port)
+{
+    const sockaddr* sa = reinterpret_cast<const sockaddr*>(&sa_arg);
+    if (getnameinfo(sa, slen, addr, addrlen, 0, 0, NI_NUMERICHOST) != 0) {
+        return false;
+    }
+    if (sa->sa_family == AF_INET) {
+        const sockaddr_in* sa_in = reinterpret_cast<const sockaddr_in*>(sa);
+        port = ntohs(sa_in->sin_port);
+    } else if (sa->sa_family == AF_INET6) {
+        const sockaddr_in6* sa_in6 = reinterpret_cast<const sockaddr_in6*>(sa);
+        port = ntohs(sa_in6->sin6_port);
+    } else {
+        return false;
+    }
+    return true;
+}
+
+void
+UtpSock::set_callbacks()
+{
+    if (sock) {
+        UTPFunctionTable funcs = {
+            &UtpSock::utp_read,
+            &UtpSock::utp_write,
+            &UtpSock::utp_get_rb_size,
+            &UtpSock::utp_state_change,
+            &UtpSock::utp_error,
+            &UtpSock::utp_overhead,
+        };
+        UTP_SetCallbacks(sock, &funcs, this);
+    }
+}
+
+static void
+send_error_atom(ErlDrvPort port, ErlDrvTermData pid,
+                const char* errstr, const ErlDrvBinary* from)
+{
+    ErlDrvTermData term[] = {
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>(errstr)),
+        ERL_DRV_EXT2TERM, reinterpret_cast<ErlDrvTermData>(from->orig_bytes), from->orig_size,
+        ERL_DRV_TUPLE, 3,
+    };
+    driver_send_term(port, pid, term, sizeof term/sizeof *term);
+}
