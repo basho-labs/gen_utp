@@ -1,9 +1,9 @@
-#ifndef GEN_UTP_LOCKER_H
-#define GEN_UTP_LOCKER_H
+#ifndef UTPDRV_UTP_SERVER_H
+#define UTPDRV_UTP_SERVER_H
 
 // -------------------------------------------------------------------
 //
-// locker.h: Erlang driver lock/unlock
+// utpdrv_server.h: Erlang driver server port for uTP
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -23,29 +23,37 @@
 //
 // -------------------------------------------------------------------
 
-#include "erl_driver.h"
+#include <cstring>
+#include <map>
+#include "utpdrv_listener.h"
 
 namespace UtpDrv {
 
-    template<typename T, void (*lock)(T), void (*unlock)(T)> class BaseLocker
-    {
-    public:
-        explicit BaseLocker(T m) : mtx(m) { lock(mtx); }
-        ~BaseLocker() { unlock(mtx); }
+class Server : public Port
+{
+public:
+    Server(Dispatcher& disp, Listener& lr, UTPSocket* utp);
+    ~Server();
 
-    private:
-        T mtx;
+    void incoming();
 
-        BaseLocker(const BaseLocker&);
-        BaseLocker& operator=(const BaseLocker&);
-    };
+    void force_close();
 
-    typedef BaseLocker<ErlDrvMutex*,
-        erl_drv_mutex_lock, erl_drv_mutex_unlock> MutexLocker;
+private:
+    Listener& lstnr;
 
-    typedef BaseLocker<ErlDrvPDL,
-        driver_pdl_lock, driver_pdl_unlock> PdlLocker;
+    Server(const Server&);
+    void operator=(const Server&);
+};
 
 }
+
+
+// this block comment is for emacs, do not delete
+// Local Variables:
+// mode: c++
+// c-file-style: "stroustrup"
+// c-file-offsets: ((innamespace . 0))
+// End:
 
 #endif

@@ -1,9 +1,6 @@
-#ifndef GEN_UTP_LOCKER_H
-#define GEN_UTP_LOCKER_H
-
 // -------------------------------------------------------------------
 //
-// locker.h: Erlang driver lock/unlock
+// utpdrv_server.cc: Erlang driver server port for uTP
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -23,29 +20,35 @@
 //
 // -------------------------------------------------------------------
 
-#include "erl_driver.h"
+#include "ei.h"
+#include "utpdrv_server.h"
+#include "locker.h"
 
-namespace UtpDrv {
 
-    template<typename T, void (*lock)(T), void (*unlock)(T)> class BaseLocker
-    {
-    public:
-        explicit BaseLocker(T m) : mtx(m) { lock(mtx); }
-        ~BaseLocker() { unlock(mtx); }
+using namespace UtpDrv;
 
-    private:
-        T mtx;
-
-        BaseLocker(const BaseLocker&);
-        BaseLocker& operator=(const BaseLocker&);
-    };
-
-    typedef BaseLocker<ErlDrvMutex*,
-        erl_drv_mutex_lock, erl_drv_mutex_unlock> MutexLocker;
-
-    typedef BaseLocker<ErlDrvPDL,
-        driver_pdl_lock, driver_pdl_unlock> PdlLocker;
-
+UtpDrv::Server::Server(Dispatcher& disp, Listener& lr, UTPSocket* u) :
+    Port(disp, INVALID_SOCKET), lstnr(lr)
+{
+    utp = u;
+    status = connect_pending;
 }
 
-#endif
+UtpDrv::Server::~Server()
+{
+}
+
+void
+UtpDrv::Server::incoming()
+{
+    set_callbacks();
+    writable = true;
+}
+
+void
+UtpDrv::Server::force_close()
+{
+    driver_failure_eof(drv_port);
+    MutexLocker lock(utp_mutex);
+    UTP_Close(utp);
+}
