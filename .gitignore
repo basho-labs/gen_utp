@@ -1,3 +1,4 @@
+.eunit/*
 ebin/*
 priv/*
 c_src/*.o
