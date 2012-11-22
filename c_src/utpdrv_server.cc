@@ -38,9 +38,19 @@ UtpDrv::Server::~Server()
 {
 }
 
+ErlDrvSSizeT
+UtpDrv::Server::close(const char* buf, ErlDrvSizeT len,
+                      char** rbuf, ErlDrvSizeT rlen)
+{
+    printf("called Server::close\r\n"); fflush(stdout);
+    lstnr.server_close(this);
+    return Port::close(buf, len, rbuf, rlen);
+}
+
 void
 UtpDrv::Server::incoming()
 {
+    printf("called Server::incoming\r\n"); fflush(stdout);
     set_callbacks();
     writable = true;
 }
@@ -48,7 +58,9 @@ UtpDrv::Server::incoming()
 void
 UtpDrv::Server::force_close()
 {
-    driver_failure_eof(drv_port);
-    MutexLocker lock(utp_mutex);
-    UTP_Close(utp);
+    printf("called Server::force_close\r\n"); fflush(stdout);
+    if (utp != 0) {
+        MutexLocker lock(utp_mutex);
+        UTP_Close(utp);
+    }
 }

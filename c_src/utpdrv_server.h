@@ -35,6 +35,9 @@ public:
     Server(Dispatcher& disp, Listener& lr, UTPSocket* utp);
     ~Server();
 
+    ErlDrvSSizeT
+    close(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
     void incoming();
 
     void force_close();

@@ -75,6 +75,7 @@ protected:
 
     Dispatcher& topdisp;
     UTPSocket* utp;
+    ErlDrvBinary* close_ref;
     ErlDrvMonitor owner_mon;
     ConnectInfo status;
     int udp_sock, state, error_code;

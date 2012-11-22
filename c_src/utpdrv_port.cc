@@ -30,7 +30,7 @@ using namespace UtpDrv;
 
 UtpDrv::Port::Port(Dispatcher& disp, int sock) :
     Dispatcher(reinterpret_cast<ErlDrvPort>(-1)),
-    topdisp(disp), utp(0), status(not_connected),
+    topdisp(disp), utp(0), close_ref(0), status(not_connected),
     udp_sock(sock), state(0), error_code(0),
     writable(false), connect_ref(0)
 {
@@ -73,6 +73,7 @@ UtpDrv::Port::set_callbacks()
 void
 UtpDrv::Port::readable()
 {
+    printf("called Port::readable\r\n"); fflush(stdout);
     byte buf[4096];
     SockAddr addr;
     socklen_t salen = sizeof addr;
@@ -90,6 +91,7 @@ UtpDrv::Port::readable()
 void
 UtpDrv::Port::set_port(ErlDrvPort port)
 {
+    printf("called Port::set_port/1\r\n"); fflush(stdout);
     drv_port = port;
     set_port_control_flags(drv_port, PORT_CONTROL_FLAG_BINARY);
     pdl = driver_pdl_create(drv_port);
@@ -98,6 +100,7 @@ UtpDrv::Port::set_port(ErlDrvPort port)
 void
 UtpDrv::Port::set_port(ErlDrvPort port, ErlDrvTermData owner)
 {
+    printf("called Port::set_port/2\r\n"); fflush(stdout);
     drv_port = port;
     drv_owner = owner;
     driver_monitor_process(drv_port, drv_owner, &owner_mon);
@@ -109,6 +112,7 @@ ErlDrvSSizeT
 UtpDrv::Port::connect_validate(const char* buf, ErlDrvSizeT len,
                                char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Port::connect_validate\r\n"); fflush(stdout);
     // assign the owner here because with this call we're now
     // assured the caller requesting the connection has been
     // linked to the port in gen_utp
@@ -175,6 +179,20 @@ ErlDrvSSizeT
 UtpDrv::Port::close(const char* buf, ErlDrvSizeT len,
                     char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Port::close\r\n"); fflush(stdout);
+    int index = 0, vsn, type, size;
+    if (ei_decode_version(buf, &index, &vsn) != 0) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
+    if (ei_get_type(buf, &index, &type, &size) != 0 || type != ERL_BINARY_EXT) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
+    close_ref = driver_alloc_binary(size);
+    long lsize;
+    if (ei_decode_binary(buf, &index, close_ref->orig_bytes, &lsize) != 0) {
+        driver_free_binary(close_ref);
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
     status = closing;
     const char* retval = "ok";
     if (utp != 0) {
@@ -186,7 +204,7 @@ UtpDrv::Port::close(const char* buf, ErlDrvSizeT len,
         MutexLocker lock(utp_mutex);
         UTP_Close(utp);
     }
-    int index = 0;
+    index = 0;
     ei_encode_version(*rbuf, &index);
     ei_encode_atom(*rbuf, &index, retval);
     return index+1;
@@ -196,6 +214,7 @@ ErlDrvSSizeT
 UtpDrv::Port::send(const char* buf, ErlDrvSizeT len,
                    char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Port::send\r\n"); fflush(stdout);
     if (status != connected || utp == 0) {
         return enotconn(rbuf);
     }
@@ -220,6 +239,7 @@ ErlDrvSSizeT
 UtpDrv::Port::sockname(const char* buf, ErlDrvSizeT len,
                        char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Port::sockname\r\n"); fflush(stdout);
     SockAddr addr;
     socklen_t slen = sizeof addr;
     int index = 0, result = getsockname(udp_sock,
@@ -242,6 +262,7 @@ ErlDrvSSizeT
 UtpDrv::Port::peername(const char* buf, ErlDrvSizeT len,
                        char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Port::peername\r\n"); fflush(stdout);
     if (status != connected || utp == 0) {
         return enotconn(rbuf);
     }
@@ -258,6 +279,7 @@ UtpDrv::Port::peername(const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::Port::process_exit(ErlDrvMonitor* monitor)
 {
+    printf("called Port::process_exit\r\n"); fflush(stdout);
     if (udp_sock != INVALID_SOCKET) {
         driver_select(drv_port, reinterpret_cast<ErlDrvEvent>(udp_sock),
                       ERL_DRV_READ|ERL_DRV_USE, 0);
@@ -274,6 +296,7 @@ UtpDrv::Port::process_exit(ErlDrvMonitor* monitor)
 void
 UtpDrv::Port::stop()
 {
+    printf("called Port::stop\r\n"); fflush(stdout);
     if (drv_port != reinterpret_cast<ErlDrvPort>(-1)) {
         driver_demonitor_process(drv_port, &owner_mon);
     }
@@ -370,11 +393,19 @@ UtpDrv::Port::do_state_change(int s)
         if (udp_sock != INVALID_SOCKET) {
             topdisp.deselect(udp_sock);
         }
-        ErlDrvTermData term[] = {
-            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
-        };
-        MutexLocker lock(drv_mutex);
-        driver_output_term(drv_port, term, sizeof term/sizeof *term);
+        if (status == closing) {
+            ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(
+                close_ref->orig_bytes);
+            ErlDrvTermData term[] = {
+                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
+                ERL_DRV_EXT2TERM, ext, close_ref->orig_size,
+                ERL_DRV_TUPLE, 2,
+            };
+            MutexLocker lock(drv_mutex);
+            driver_output_term(drv_port, term, sizeof term/sizeof *term);
+            driver_free_binary(close_ref);
+            close_ref = 0;
+        }
         break;
     }
 }

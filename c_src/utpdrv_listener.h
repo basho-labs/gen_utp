@@ -61,9 +61,12 @@ public:
 
     void stop();
 
+    void server_close(Server* server);
+
 private:
     typedef std::map<SockAddr, Server*, SockAddrComp> ServerMap;
     ServerMap servers;
+    ErlDrvMutex* sm_mutex;
 
     void do_incoming(UTPSocket* utp);
 };

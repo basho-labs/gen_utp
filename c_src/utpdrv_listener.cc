@@ -33,16 +33,19 @@ using namespace UtpDrv;
 
 UtpDrv::Listener::Listener(Dispatcher& disp, int sock) : Port(disp, sock)
 {
+    sm_mutex = erl_drv_mutex_create(const_cast<char*>("listener"));
 }
 
 UtpDrv::Listener::~Listener()
 {
+    erl_drv_mutex_destroy(sm_mutex);
 }
 
 ErlDrvSSizeT
 UtpDrv::Listener::send(const char* buf, ErlDrvSizeT len,
                        char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Listener::sockname\r\n"); fflush(stdout);
     return enotconn(rbuf);
 }
 
@@ -50,6 +53,7 @@ ErlDrvSSizeT
 UtpDrv::Listener::peername(const char* buf, ErlDrvSizeT len,
                            char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Listener::peername\r\n"); fflush(stdout);
     return enotconn(rbuf);
 }
 
@@ -57,6 +61,8 @@ ErlDrvSSizeT
 UtpDrv::Listener::close(const char* buf, ErlDrvSizeT len,
                         char** rbuf, ErlDrvSizeT rlen)
 {
+    printf("called Listener::close\r\n"); fflush(stdout);
+    MutexLocker lock(sm_mutex);
     ServerMap::iterator it = servers.begin();
     while (it != servers.end()) {
         it++->second->force_close();
@@ -67,9 +73,23 @@ UtpDrv::Listener::close(const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::Listener::stop()
 {
+    printf("called Listener::stop\r\n"); fflush(stdout);
     topdisp.deselect(udp_sock);
     ::close(udp_sock);
     Port::stop();
+}
+
+void
+UtpDrv::Listener::server_close(Server* server)
+{
+    printf("called Listener::server_close\r\n"); fflush(stdout);
+    ServerMap::iterator it = servers.begin();
+    while (it != servers.end()) {
+        if (it->second == server) {
+            servers.erase(it);
+            break;
+        }
+    }
 }
 
 void
@@ -79,28 +99,32 @@ UtpDrv::Listener::do_incoming(UTPSocket* utp)
     SockAddr addr;
     socklen_t addrlen = sizeof addr;
     UTP_GetPeerName(utp, reinterpret_cast<sockaddr*>(&addr), &addrlen);
-    ServerMap::iterator it = servers.find(addr);
-    if (it == servers.end()) {
-        Server* server = new Server(topdisp, *this, utp);
-        ServerMap::value_type val(addr, server);
-        std::pair<ServerMap::iterator, bool> p = servers.insert(val);
-        it = p.first;
-        ErlDrvTermData owner = driver_connected(drv_port);
-        ErlDrvPort new_port = topdisp.create_port(owner, server);
-        char addrstr[INET6_ADDRSTRLEN];
-        unsigned short port;
-        sockaddr_to_addrport(addr, addrlen, addrstr, sizeof addrstr, port);
-        ErlDrvTermData strdata = reinterpret_cast<ErlDrvTermData>(addrstr);
-        ErlDrvTermData term[] = {
-            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
-            ERL_DRV_PORT, driver_mk_port(new_port),
-            ERL_DRV_STRING, strdata, strlen(addrstr),
-            ERL_DRV_UINT, port,
-            ERL_DRV_TUPLE, 2,
-            ERL_DRV_TUPLE, 3,
-        };
-        MutexLocker lock(drv_mutex);
-        driver_output_term(drv_port, term, sizeof term/sizeof *term);
+    ServerMap::iterator it;
+    {
+        MutexLocker lock(sm_mutex);
+        it = servers.find(addr);
+        if (it == servers.end()) {
+            Server* server = new Server(topdisp, *this, utp);
+            ServerMap::value_type val(addr, server);
+            std::pair<ServerMap::iterator, bool> p = servers.insert(val);
+            it = p.first;
+            ErlDrvTermData owner = driver_connected(drv_port);
+            ErlDrvPort new_port = topdisp.create_port(owner, server);
+            char addrstr[INET6_ADDRSTRLEN];
+            unsigned short port;
+            sockaddr_to_addrport(addr, addrlen, addrstr, sizeof addrstr, port);
+            ErlDrvTermData strdata = reinterpret_cast<ErlDrvTermData>(addrstr);
+            ErlDrvTermData term[] = {
+                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
+                ERL_DRV_PORT, driver_mk_port(new_port),
+                ERL_DRV_STRING, strdata, strlen(addrstr),
+                ERL_DRV_UINT, port,
+                ERL_DRV_TUPLE, 2,
+                ERL_DRV_TUPLE, 3,
+            };
+            MutexLocker lock(drv_mutex);
+            driver_output_term(drv_port, term, sizeof term/sizeof *term);
+        }
     }
     it->second->incoming();
 }

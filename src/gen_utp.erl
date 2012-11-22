@@ -95,11 +95,13 @@ listen(Port) ->
 
 -spec close(utpsock()) -> ok.
 close(Sock) ->
-    Result = erlang:port_control(Sock, ?UTP_CLOSE, <<>>),
+    Ref = make_ref(),
+    Args = term_to_binary(term_to_binary(Ref)),
+    Result = erlang:port_control(Sock, ?UTP_CLOSE, Args),
     case binary_to_term(Result) of
         wait ->
             receive
-                ok -> ok
+                {ok, Ref} -> ok
             end;
         ok ->
             ok
@@ -278,42 +280,96 @@ listen_test_() ->
                        {ok, LSock2} = gen_utp:listen(Port),
                        ok = gen_utp:close(LSock2)
                    end)},
-               {"utp simple client test",
+               {"utp simple connect test",
                 ?_test(
                    begin
                        Self = self(),
+                       Ref = make_ref(),
                        spawn_link(fun() ->
-                                          {ok, LSock} = gen_utp:listen(0),
-                                          Self ! gen_utp:sockname(LSock),
-                                          receive
-                                              {utp_async, Sock, {Addr, Port}} ->
-                                                  true = is_port(Sock),
-                                                  true = is_list(Addr),
-                                                  true = is_number(Port)
-                                          after
-                                              3000 -> exit(failure)
-                                          end,
-                                          ok = gen_utp:close(LSock),
-                                          Self ! done
+                                          ok = simple_connect_server(Self, Ref)
                                   end),
-                       receive
-                           {ok, {_, LPort}} ->
-                               {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
-                               true = erlang:is_port(Sock),
-                               {connected, Self} =
-                                   erlang:port_info(Sock, connected),
-                               ok = gen_utp:close(Sock),
-                               receive
-                                   done -> ok
-                               after
-                                   3000 -> exit(failure)
-                               end
-                       after
-                           3000 -> exit(failure)
-                       end,
-                       ok
+                       ok = simple_connect_client(Ref)
+                   end)},
+               {"utp simple send test",
+                ?_test(
+                   begin
+                       Self = self(),
+                       Ref = make_ref(),
+                       spawn_link(fun() ->
+                                          ok = simple_send_server(Self, Ref)
+                                  end),
+                       ok = simple_send_client(Ref)
                    end)}
               ]}
      end}.
+
+simple_connect_server(Self, Ref) ->
+    {ok, LSock} = gen_utp:listen(0),
+    Self ! gen_utp:sockname(LSock),
+    receive
+        {utp_async, Sock, {Addr, Port}} ->
+            true = is_port(Sock),
+            true = is_list(Addr),
+            true = is_number(Port),
+            ok = gen_utp:close(Sock)
+    after
+        3000 -> exit(failure)
+    end,
+    ok = gen_utp:close(LSock),
+    Self ! {done, Ref},
+    ok.
+
+simple_connect_client(Ref) ->
+    receive
+        {ok, {_, LPort}} ->
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
+            true = erlang:is_port(Sock),
+            {connected, Self} = erlang:port_info(Sock, connected),
+            ok = gen_utp:close(Sock),
+            receive
+                {done, Ref} -> ok
+            after
+                5000 -> exit(failure)
+            end
+    after
+        5000 -> exit(failure)
+    end,
+    ok.
+
+simple_send_server(Self, Ref) ->
+    {ok, LSock} = gen_utp:listen(0),
+    Self ! gen_utp:sockname(LSock),
+    receive
+        {utp_async, Sock, {Addr, Port}} ->
+            receive
+                {utp, Sock, <<"simple send client">>} ->
+                    ok;
+                Error ->
+                    exit(Error)
+            after
+                5000 -> exit(failure)
+            end,
+            ok = gen_utp:close(Sock)
+    after
+        5000 -> exit(failure)
+    end,
+    ok = gen_utp:close(LSock),
+    Self ! {done, Ref},
+    ok.
+
+simple_send_client(Ref) ->
+    receive
+        {ok, {_, LPort}} ->
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
+            ok = gen_utp:send(Sock, <<"simple send client">>),
+            receive
+                {done, Ref} -> ok
+            after
+                5000 -> exit(failure)
+            end
+    after
+        5000 -> exit(failure)
+    end,
+    ok.
 
 -endif.
