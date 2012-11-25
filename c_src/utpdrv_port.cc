@@ -448,7 +448,7 @@ UtpDrv::Port::do_incoming(UTPSocket* utp)
 }
 
 int
-UtpDrv::Port::encode_addrport(ei_x_buff& xbuf, const SockAddr&addr,
+UtpDrv::Port::encode_addrport(ei_x_buff& xbuf, const SockAddr& addr,
                               socklen_t slen, char** rbuf, ErlDrvSizeT rlen)
 {
     char addrstr[INET6_ADDRSTRLEN];
