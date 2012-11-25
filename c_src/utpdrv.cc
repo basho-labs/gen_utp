@@ -1,6 +1,6 @@
 // -------------------------------------------------------------------
 //
-// utpdrv.cc: wrapper/driver for libutp functions
+// utpdrv.cc: driver entry points for libutp functions
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -20,30 +20,30 @@
 //
 // -------------------------------------------------------------------
 
-#include <new>
 #include <unistd.h>
 #include "erl_driver.h"
-#include "locker.h"
-#include "utpdrv_dispatcher.h"
+#include "globals.h"
+#include "main_port.h"
+
 
 using namespace UtpDrv;
 
 static int
 utp_init()
 {
-    return Dispatcher::init();
+    return MainPort::driver_init();
 }
 
 static void
 utp_finish()
 {
-    Dispatcher::finish();
+    MainPort::driver_finish();
 }
 
 static ErlDrvData
 utp_start(ErlDrvPort port, char* command)
 {
-    Dispatcher* drv = new Dispatcher(port);
+    MainPort* drv = new MainPort(port);
     drv->start();
     return reinterpret_cast<ErlDrvData>(drv);
 }
@@ -51,7 +51,7 @@ utp_start(ErlDrvPort port, char* command)
 static void
 utp_stop(ErlDrvData drv_data)
 {
-    Dispatcher* drv = reinterpret_cast<Dispatcher*>(drv_data);
+    Handler* drv = reinterpret_cast<Handler*>(drv_data);
     drv->stop();
     delete drv;
 }
@@ -59,49 +59,29 @@ utp_stop(ErlDrvData drv_data)
 static void
 utp_check_timeouts(ErlDrvData drv_data)
 {
-    Dispatcher* drv = reinterpret_cast<Dispatcher*>(drv_data);
-    drv->check_timeouts();
+    MainPort* drv = reinterpret_cast<MainPort*>(drv_data);
+    drv->check_utp_timeouts();
 }
 
 static ErlDrvSSizeT
 utp_control(ErlDrvData drv_data, unsigned int command,
             char *buf, ErlDrvSizeT len, char **rbuf, ErlDrvSizeT rlen)
 {
-    Dispatcher* drv = reinterpret_cast<Dispatcher*>(drv_data);
-    switch (command) {
-    case UTP_CONNECT_START:
-        return drv->connect_start(buf, len, rbuf, rlen);
-    case UTP_CONNECT_VALIDATE:
-        return drv->connect_validate(buf, len, rbuf, rlen);
-    case UTP_LISTEN:
-        return drv->listen(buf, len, rbuf, rlen);
-    case UTP_SEND:
-        return drv->send(buf, len, rbuf, rlen);
-//    case UTP_RECV:
-//        return drv->recv(buf, len, rbuf, rlen);
-    case UTP_CLOSE:
-        return drv->close(buf, len, rbuf, rlen);
-    case UTP_SOCKNAME:
-        return drv->sockname(buf, len, rbuf, rlen);
-    case UTP_PEERNAME:
-        return drv->peername(buf, len, rbuf, rlen);
-    default:
-        break;
-    }
-    return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
+    Handler* drv = reinterpret_cast<Handler*>(drv_data);
+    return drv->control(command, buf, len, rbuf, rlen);
 }
 
 static void
 utp_ready_input(ErlDrvData drv_data, ErlDrvEvent event)
 {
-    Dispatcher* drv = reinterpret_cast<Dispatcher*>(drv_data);
-    drv->read_ready(reinterpret_cast<long>(event));
+    MainPort* drv = reinterpret_cast<MainPort*>(drv_data);
+    drv->ready_input(reinterpret_cast<long>(event));
 }
 
 static void
 utp_process_exit(ErlDrvData drv_data, ErlDrvMonitor* monitor)
 {
-    Dispatcher* drv = reinterpret_cast<Dispatcher*>(drv_data);
+    Handler* drv = reinterpret_cast<Handler*>(drv_data);
     drv->process_exit(monitor);
 }
 
@@ -125,7 +105,7 @@ static ErlDrvEntry drv_entry = {
     0,//void (*ready_output)(ErlDrvData drv_data, ErlDrvEvent event);
                                 /* called when output is possible to one of
                                    the driver's handles */
-    Dispatcher::drv_name,
+    UtpDrv::drv_name,
     utp_finish,
     0,
     utp_control,

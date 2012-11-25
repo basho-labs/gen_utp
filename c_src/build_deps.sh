@@ -13,8 +13,7 @@ case "$1" in
 
     *)
         test -f libutp/libutp.a && exit 0
-
         tar -xzf libutp-${VSN}.tar.gz
-        ( set -x ; cd libutp && patch -p0 < ../debug-patch && make CXXFLAGS+="$DRV_CFLAGS" )
+        ( cd libutp && make CXXFLAGS+="$DRV_CFLAGS" )
         ;;
 esac

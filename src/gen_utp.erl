@@ -154,7 +154,11 @@ init([]) ->
     LoadResult = case erl_ddll:load_driver(PrivDir, Shlib) of
                      ok -> ok;
                      {error, already_loaded} -> ok;
-                     _ -> {stop, "could not load driver " ++ Shlib}
+                     {error, LoadError} ->
+                         ErrStr = lists:flatten(
+                                    io_lib:format("could not load driver ~s: ~p",
+                                                  [Shlib, LoadError])),
+                         {stop, ErrStr}
                  end,
     case LoadResult of
         ok ->
