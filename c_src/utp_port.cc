@@ -30,9 +30,9 @@
 using namespace UtpDrv;
 
 UtpDrv::UtpPort::UtpPort(int sock) :
-    port(0), owner(driver_term_nil), pdl(0), caller(driver_term_nil),
-    utp(0), caller_ref(0), status(not_connected),
-    udp_sock(sock), state(0), error_code(0), writable(false), mon_valid(false)
+    port(0), pdl(0), caller(driver_term_nil), utp(0), caller_ref(0),
+    status(not_connected), udp_sock(sock),
+    state(0), error_code(0), writable(false), mon_valid(false)
 {
 }
 
@@ -53,12 +53,11 @@ UtpDrv::UtpPort::process_exit(ErlDrvMonitor* monitor)
 }
 
 bool
-UtpDrv::UtpPort::set_port(ErlDrvPort p, ErlDrvTermData proc)
+UtpDrv::UtpPort::set_port(ErlDrvPort p)
 {
     DBGOUT("UtpPort::set_port\r\n");
     port = p;
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
-    owner = proc;
     pdl = driver_pdl_create(port);
     if (pdl == 0) {
         driver_failure_atom(port, const_cast<char*>("port_data_lock_failed"));

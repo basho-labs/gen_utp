@@ -136,7 +136,7 @@ UtpDrv::Listener::do_incoming(UTPSocket* utp)
             servers.insert(sval);
             ErlDrvTermData owner = driver_connected(port);
             ErlDrvPort new_port = create_port(owner, server);
-            if (!server->set_port(new_port, owner)) {
+            if (!server->set_port(new_port)) {
                 driver_failure_atom(new_port,
                                     const_cast<char*>("port_data_lock_failed"));
                 addrs.erase(addr);

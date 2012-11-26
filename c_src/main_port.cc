@@ -218,7 +218,7 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
     Client* client = new Client(udp_sock);
     ErlDrvTermData caller = driver_caller(port);
     ErlDrvPort new_port = create_port(caller, client);
-    if (!client->set_port(new_port, caller)) {
+    if (!client->set_port(new_port)) {
         driver_failure_atom(new_port,
                             const_cast<char*>("port_data_lock_failed"));
         driver_free_binary(from);
@@ -289,7 +289,7 @@ UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
         ErlDrvEvent ev = reinterpret_cast<ErlDrvEvent>(udp_sock);
         driver_select(port, ev, ERL_DRV_READ|ERL_DRV_USE, 1);
         ErlDrvPort new_port = create_port(caller, listener);
-        if (!listener->set_port(new_port, caller)) {
+        if (!listener->set_port(new_port)) {
             driver_failure_atom(new_port,
                                 const_cast<char*>("port_data_lock_failed"));
             driver_free_binary(from);

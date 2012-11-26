@@ -36,7 +36,7 @@ public:
     void process_exit(ErlDrvMonitor* monitor);
 
     virtual bool
-    set_port(ErlDrvPort p, ErlDrvTermData proc);
+    set_port(ErlDrvPort p);
 
     virtual void
     input_ready();
@@ -90,7 +90,6 @@ protected:
     void demonitor();
 
     ErlDrvPort port;
-    ErlDrvTermData owner;
     ErlDrvMonitor mon;
     ErlDrvPDL pdl;
     ErlDrvTermData caller;
