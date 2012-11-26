@@ -31,13 +31,13 @@ using namespace UtpDrv;
 
 UtpDrv::Listener::Listener(int sock) : UtpPort(sock)
 {
-    DBGOUT("Listener::Listener\r\n");
+    UTPDRV_TRACE("Listener::Listener\r\n");
     sm_mutex = erl_drv_mutex_create(const_cast<char*>("listener"));
 }
 
 UtpDrv::Listener::~Listener()
 {
-    DBGOUT("Listener::~Listener\r\n");
+    UTPDRV_TRACE("Listener::~Listener\r\n");
     erl_drv_mutex_destroy(sm_mutex);
 }
 
@@ -45,7 +45,7 @@ ErlDrvSSizeT
 UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
                           char** rbuf, ErlDrvSizeT rlen)
 {
-    DBGOUT("Listener::control\r\n");
+    UTPDRV_TRACE("Listener::control\r\n");
     switch (command) {
     case UTP_CLOSE:
         return close(buf, len, rbuf);
@@ -63,7 +63,7 @@ UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::Listener::stop()
 {
-    DBGOUT("Listener::stop\r\n");
+    UTPDRV_TRACE("Listener::stop\r\n");
     if (main_port) {
         main_port->deselect(udp_sock);
     }
@@ -73,42 +73,42 @@ void
 UtpDrv::Listener::do_send_to(const byte* p, size_t len,
                              const sockaddr* to, socklen_t slen)
 {
-    DBGOUT("Listener::do_send_to\r\n");
+    UTPDRV_TRACE("Listener::do_send_to\r\n");
     UtpPort::do_send_to(p, len, to, slen);
 }
 
 void
 UtpDrv::Listener::do_read(const byte* bytes, size_t count)
 {
-    DBGOUT("Listener::do_read\r\n");
+    UTPDRV_TRACE("Listener::do_read\r\n");
     UtpPort::do_read(bytes, count);
 }
 
 void
 UtpDrv::Listener::do_write(byte* bytes, size_t count)
 {
-    DBGOUT("Listener::do_write\r\n");
+    UTPDRV_TRACE("Listener::do_write\r\n");
     // do nothing
 }
 
 size_t
 UtpDrv::Listener::do_get_rb_size()
 {
-    DBGOUT("Listener::do_get_rb_size\r\n");
+    UTPDRV_TRACE("Listener::do_get_rb_size\r\n");
     return UtpPort::do_get_rb_size();
 }
 
 void
 UtpDrv::Listener::do_state_change(int s)
 {
-    DBGOUT("Listener::do_state_change\r\n");
+    UTPDRV_TRACE("Listener::do_state_change\r\n");
     UtpPort::do_state_change(s);
 }
 
 void
 UtpDrv::Listener::do_error(int errcode)
 {
-    DBGOUT("Listener::do_error\r\n");
+    UTPDRV_TRACE("Listener::do_error\r\n");
 }
 
 void
@@ -120,7 +120,7 @@ UtpDrv::Listener::do_overhead(bool send, size_t count, int type)
 void
 UtpDrv::Listener::do_incoming(UTPSocket* utp)
 {
-    DBGOUT("Listener::do_incoming\r\n");
+    UTPDRV_TRACE("Listener::do_incoming\r\n");
     SockAddr addr;
     UTP_GetPeerName(utp, addr, &addr.slen);
     AddrMap::iterator it;
@@ -164,14 +164,14 @@ UtpDrv::Listener::do_incoming(UTPSocket* utp)
 ErlDrvSSizeT
 UtpDrv::Listener::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("Listener::peername\r\n");
+    UTPDRV_TRACE("Listener::peername\r\n");
     return encode_error(rbuf, ENOTCONN);
 }
 
 ErlDrvSSizeT
 UtpDrv::Listener::send(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("Listener::send\r\n");
+    UTPDRV_TRACE("Listener::send\r\n");
     return encode_error(rbuf, ENOTCONN);
 }
 
@@ -189,6 +189,6 @@ UtpDrv::Listener::server_closing(Server* svr)
 ErlDrvSSizeT
 UtpDrv::Listener::close(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("Listener::close\r\n");
+    UTPDRV_TRACE("Listener::close\r\n");
     return UtpPort::close(buf, len, rbuf);
 }

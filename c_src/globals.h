@@ -26,8 +26,12 @@
 #include "main_port.h"
 
 
-//#define DBGOUT(msg) DBGOUT(msg)
-#define DBGOUT(msg)
+#define UTPDRV_DEBUG 0
+#if UTPDRV_DEBUG
+#define UTPDRV_TRACE(str) fputs(str, stderr)
+#else
+#define UTPDRV_TRACE(str)
+#endif
 
 namespace UtpDrv {
 

@@ -46,7 +46,7 @@ UtpDrv::UtpPort::~UtpPort()
 void
 UtpDrv::UtpPort::process_exit(ErlDrvMonitor* monitor)
 {
-    DBGOUT("UtpPort::process_exit\r\n");
+    UTPDRV_TRACE("UtpPort::process_exit\r\n");
     main_port->del_monitor(port, *monitor);
     mon_valid = false;
     driver_failure_eof(port);
@@ -55,7 +55,7 @@ UtpDrv::UtpPort::process_exit(ErlDrvMonitor* monitor)
 bool
 UtpDrv::UtpPort::set_port(ErlDrvPort p)
 {
-    DBGOUT("UtpPort::set_port\r\n");
+    UTPDRV_TRACE("UtpPort::set_port\r\n");
     port = p;
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
     pdl = driver_pdl_create(port);
@@ -69,7 +69,7 @@ UtpDrv::UtpPort::set_port(ErlDrvPort p)
 void
 UtpDrv::UtpPort::input_ready()
 {
-    DBGOUT("UtpPort::input_ready\r\n");
+    UTPDRV_TRACE("UtpPort::input_ready\r\n");
     byte buf[4096];
     SockAddr addr;
     int len = recvfrom(udp_sock, buf, sizeof buf, 0, addr, &addr.slen);
@@ -84,7 +84,7 @@ UtpDrv::UtpPort::input_ready()
 void
 UtpDrv::UtpPort::demonitor()
 {
-    DBGOUT("UtpPort::demonitor\r\n");
+    UTPDRV_TRACE("UtpPort::demonitor\r\n");
     main_port->del_monitor(port, mon);
     mon_valid = false;
 }
@@ -93,7 +93,7 @@ UtpDrv::UtpPort::demonitor()
 void
 UtpDrv::UtpPort::set_utp_callbacks(UTPSocket* utp)
 {
-    DBGOUT("UtpPort::set_utp_callbacks\r\n");
+    UTPDRV_TRACE("UtpPort::set_utp_callbacks\r\n");
     UTPFunctionTable funcs = {
         &UtpPort::utp_read,
         &UtpPort::utp_write,
@@ -108,7 +108,7 @@ UtpDrv::UtpPort::set_utp_callbacks(UTPSocket* utp)
 ErlDrvSSizeT
 UtpDrv::UtpPort::sockname(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("UtpPort::sockname\r\n");
+    UTPDRV_TRACE("UtpPort::sockname\r\n");
     SockAddr addr;
     if (getsockname(udp_sock, addr, &addr.slen) < 0) {
         return encode_error(rbuf, errno);
@@ -119,7 +119,7 @@ UtpDrv::UtpPort::sockname(const char* buf, ErlDrvSizeT len, char** rbuf)
 ErlDrvSSizeT
 UtpDrv::UtpPort::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("UtpPort::peername\r\n");
+    UTPDRV_TRACE("UtpPort::peername\r\n");
     if (status != connected || utp == 0) {
         return encode_error(rbuf, ENOTCONN);
     }
@@ -134,7 +134,7 @@ UtpDrv::UtpPort::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
 ErlDrvSSizeT
 UtpDrv::UtpPort::send(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("UtpPort::send\r\n");
+    UTPDRV_TRACE("UtpPort::send\r\n");
     if (status != connected || utp == 0) {
         return encode_error(rbuf, ENOTCONN);
     }
@@ -155,7 +155,7 @@ UtpDrv::UtpPort::send(const char* buf, ErlDrvSizeT len, char** rbuf)
 ErlDrvSSizeT
 UtpDrv::UtpPort::close(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("UtpPort::close\r\n");
+    UTPDRV_TRACE("UtpPort::close\r\n");
     if (mon_valid) {
         main_port->del_monitor(port, mon);
         mon_valid = false;
@@ -198,7 +198,7 @@ void
 UtpDrv::UtpPort::do_send_to(const byte* p, size_t len,
                              const sockaddr* to, socklen_t slen)
 {
-    DBGOUT("UtpPort::do_send_to\r\n");
+    UTPDRV_TRACE("UtpPort::do_send_to\r\n");
     int count = sendto(udp_sock, p, len, 0, to, slen);
     if (count < 0) {
         // TODO: handle error
@@ -208,7 +208,7 @@ UtpDrv::UtpPort::do_send_to(const byte* p, size_t len,
 void
 UtpDrv::UtpPort::do_read(const byte* bytes, size_t count)
 {
-    DBGOUT("UtpPort::do_read\r\n");
+    UTPDRV_TRACE("UtpPort::do_read\r\n");
     if (count == 0) return;
     char* buf = const_cast<char*>(reinterpret_cast<const char*>(bytes));
     ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(buf);
@@ -225,7 +225,7 @@ UtpDrv::UtpPort::do_read(const byte* bytes, size_t count)
 void
 UtpDrv::UtpPort::do_write(byte* bytes, size_t count)
 {
-    DBGOUT("UtpPort::do_write\r\n");
+    UTPDRV_TRACE("UtpPort::do_write\r\n");
     if (count == 0) return;
     PdlLocker pdl_lock(pdl);
     if (driver_sizeq(port) < count) {
@@ -246,14 +246,14 @@ UtpDrv::UtpPort::do_write(byte* bytes, size_t count)
 size_t
 UtpDrv::UtpPort::do_get_rb_size()
 {
-    DBGOUT("UtpPort::do_get_rb_size\r\n");
+    UTPDRV_TRACE("UtpPort::do_get_rb_size\r\n");
     return 0;
 }
 
 void
 UtpDrv::UtpPort::do_state_change(int s)
 {
-    DBGOUT("UtpPort::do_state_change\r\n");
+    UTPDRV_TRACE("UtpPort::do_state_change\r\n");
     if (state == s) return;
     state = s;
     switch (state) {
@@ -311,7 +311,7 @@ UtpDrv::UtpPort::do_state_change(int s)
 void
 UtpDrv::UtpPort::do_error(int errcode)
 {
-    DBGOUT("UtpPort::do_error\r\n");
+    UTPDRV_TRACE("UtpPort::do_error\r\n");
     error_code = errcode;
     switch (status) {
     case connect_pending:

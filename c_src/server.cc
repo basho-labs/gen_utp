@@ -31,7 +31,7 @@ using namespace UtpDrv;
 UtpDrv::Server::Server(Listener& lr, UTPSocket* us) :
     UtpPort(INVALID_SOCKET), listener(lr)
 {
-    DBGOUT("Server::Server\r\n");
+    UTPDRV_TRACE("Server::Server\r\n");
     utp = us;
     set_utp_callbacks(utp);
     writable = true;
@@ -40,14 +40,14 @@ UtpDrv::Server::Server(Listener& lr, UTPSocket* us) :
 
 UtpDrv::Server::~Server()
 {
-    DBGOUT("Server::~Server\r\n");
+    UTPDRV_TRACE("Server::~Server\r\n");
 }
 
 ErlDrvSSizeT
 UtpDrv::Server::control(unsigned command, const char* buf, ErlDrvSizeT len,
                         char** rbuf, ErlDrvSizeT rlen)
 {
-    DBGOUT("Server::control\r\n");
+    UTPDRV_TRACE("Server::control\r\n");
     switch (command) {
     case UTP_CLOSE:
         return close(buf, len, rbuf);
@@ -66,18 +66,18 @@ UtpDrv::Server::control(unsigned command, const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::Server::stop()
 {
-    DBGOUT("Server::stop\r\n");}
+    UTPDRV_TRACE("Server::stop\r\n");}
 
 void
 UtpDrv::Server::incoming()
 {
-    DBGOUT("Server::incoming\r\n");
+    UTPDRV_TRACE("Server::incoming\r\n");
 }
 
 void
 UtpDrv::Server::force_close()
 {
-    DBGOUT("Server::force_close\r\n");
+    UTPDRV_TRACE("Server::force_close\r\n");
     if (utp != 0) {
         MutexLocker lock(utp_mutex);
         UTP_Close(utp);
@@ -87,7 +87,7 @@ UtpDrv::Server::force_close()
 ErlDrvSSizeT
 UtpDrv::Server::close(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("Server::close\r\n");
+    UTPDRV_TRACE("Server::close\r\n");
     listener.server_closing(this);
     return UtpPort::close(buf, len, rbuf);
 }
@@ -96,42 +96,42 @@ void
 UtpDrv::Server::do_send_to(const byte* p, size_t len, const sockaddr* to,
                            socklen_t slen)
 {
-    DBGOUT("Server::do_send_to\r\n");
+    UTPDRV_TRACE("Server::do_send_to\r\n");
     listener.do_send_to(p, len, to, slen);
 }
 
 void
 UtpDrv::Server::do_read(const byte* bytes, size_t count)
 {
-    DBGOUT("Server::do_read\r\n");
+    UTPDRV_TRACE("Server::do_read\r\n");
     UtpPort::do_read(bytes, count);
 }
 
 void
 UtpDrv::Server::do_write(byte* bytes, size_t count)
 {
-    DBGOUT("Server::do_write\r\n");
+    UTPDRV_TRACE("Server::do_write\r\n");
     UtpPort::do_write(bytes, count);
 }
 
 size_t
 UtpDrv::Server::do_get_rb_size()
 {
-    DBGOUT("Server::do_get_rb_size\r\n");
+    UTPDRV_TRACE("Server::do_get_rb_size\r\n");
     return UtpPort::do_get_rb_size();
 }
 
 void
 UtpDrv::Server::do_state_change(int s)
 {
-    DBGOUT("Server::do_state_change\r\n");
+    UTPDRV_TRACE("Server::do_state_change\r\n");
     UtpPort::do_state_change(s);
 }
 
 void
 UtpDrv::Server::do_error(int errcode)
 {
-    DBGOUT("Server::do_error\r\n");
+    UTPDRV_TRACE("Server::do_error\r\n");
     UtpPort::do_error(errcode);
 }
 
@@ -144,5 +144,5 @@ UtpDrv::Server::do_overhead(bool send, size_t count, int type)
 void
 UtpDrv::Server::do_incoming(UTPSocket* utp)
 {
-    DBGOUT("Server::do_incoming\r\n");
+    UTPDRV_TRACE("Server::do_incoming\r\n");
 }

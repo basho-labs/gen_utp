@@ -29,19 +29,19 @@ using namespace UtpDrv;
 
 UtpDrv::Client::Client(int sock) : UtpPort(sock)
 {
-    DBGOUT("Client::Client\r\n");
+    UTPDRV_TRACE("Client::Client\r\n");
 }
 
 UtpDrv::Client::~Client()
 {
-    DBGOUT("Client::~Client\r\n");
+    UTPDRV_TRACE("Client::~Client\r\n");
 }
 
 ErlDrvSSizeT
 UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
                         char** rbuf, ErlDrvSizeT rlen)
 {
-    DBGOUT("Client::control\r\n");
+    UTPDRV_TRACE("Client::control\r\n");
     switch (command) {
     case UTP_CONNECT_VALIDATE:
         return connect_validate(buf, len, rbuf);
@@ -61,7 +61,7 @@ UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::Client::stop()
 {
-    DBGOUT("Client::stop\r\n");
+    UTPDRV_TRACE("Client::stop\r\n");
     if (main_port) {
         main_port->deselect(udp_sock);
     }
@@ -70,7 +70,7 @@ UtpDrv::Client::stop()
 void
 UtpDrv::Client::connect_to(const SockAddr& addr)
 {
-    DBGOUT("Client::connect_to\r\n");
+    UTPDRV_TRACE("Client::connect_to\r\n");
     status = connect_pending;
     if (caller_ref != 0) {
         driver_free_binary(caller_ref);
@@ -86,42 +86,42 @@ void
 UtpDrv::Client::do_send_to(const byte* p, size_t len,
                            const sockaddr* to, socklen_t slen)
 {
-    DBGOUT("Client::do_send_to\r\n");
+    UTPDRV_TRACE("Client::do_send_to\r\n");
     UtpPort::do_send_to(p, len, to, slen);
 }
 
 void
 UtpDrv::Client::do_read(const byte* bytes, size_t count)
 {
-    DBGOUT("Client::do_read\r\n");
+    UTPDRV_TRACE("Client::do_read\r\n");
     UtpPort::do_read(bytes, count);
 }
 
 void
 UtpDrv::Client::do_write(byte* bytes, size_t count)
 {
-    DBGOUT("Client::do_write\r\n");
+    UTPDRV_TRACE("Client::do_write\r\n");
     UtpPort::do_write(bytes, count);
 }
 
 size_t
 UtpDrv::Client::do_get_rb_size()
 {
-    DBGOUT("Client::do_get_rb_size\r\n");
+    UTPDRV_TRACE("Client::do_get_rb_size\r\n");
     return UtpPort::do_get_rb_size();
 }
 
 void
 UtpDrv::Client::do_state_change(int s)
 {
-    DBGOUT("Client::do_state_change\r\n");
+    UTPDRV_TRACE("Client::do_state_change\r\n");
     UtpPort::do_state_change(s);
 }
 
 void
 UtpDrv::Client::do_error(int errcode)
 {
-    DBGOUT("Client::do_error\r\n");
+    UTPDRV_TRACE("Client::do_error\r\n");
     UtpPort::do_error(errcode);
 }
 
@@ -134,13 +134,13 @@ UtpDrv::Client::do_overhead(bool send, size_t count, int type)
 void
 UtpDrv::Client::do_incoming(UTPSocket* utp)
 {
-    DBGOUT("Client::do_incoming\r\n");
+    UTPDRV_TRACE("Client::do_incoming\r\n");
 }
 
 ErlDrvSSizeT
 UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
-    DBGOUT("Client::connect_validate\r\n");
+    UTPDRV_TRACE("Client::connect_validate\r\n");
     ErlDrvBinary* ref = 0;
     long bin_size;
     try {

@@ -52,7 +52,7 @@ UtpDrv::MainPort::~MainPort()
 int
 UtpDrv::MainPort::driver_init()
 {
-    DBGOUT("MainPort::driver_init\r\n");
+    UTPDRV_TRACE("MainPort::driver_init\r\n");
     utp_mutex = erl_drv_mutex_create(const_cast<char*>("utp"));
     drv_mutex = erl_drv_mutex_create(const_cast<char*>("drv"));
     map_mutex = erl_drv_mutex_create(const_cast<char*>("utpmap"));
@@ -62,7 +62,7 @@ UtpDrv::MainPort::driver_init()
 void
 UtpDrv::MainPort::driver_finish()
 {
-    DBGOUT("MainPort::driver_finish\r\n");
+    UTPDRV_TRACE("MainPort::driver_finish\r\n");
     erl_drv_mutex_destroy(map_mutex);
     erl_drv_mutex_destroy(drv_mutex);
     erl_drv_mutex_destroy(utp_mutex);
@@ -80,7 +80,7 @@ ErlDrvSSizeT
 UtpDrv::MainPort::control(unsigned command, const char* buf, ErlDrvSizeT len,
                           char** rbuf, ErlDrvSizeT rlen)
 {
-    DBGOUT("MainPort::control\r\n");
+    UTPDRV_TRACE("MainPort::control\r\n");
     switch (command) {
     case UTP_CONNECT_START:
         return connect_start(buf, len, rbuf, rlen);
@@ -97,7 +97,7 @@ UtpDrv::MainPort::control(unsigned command, const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::MainPort::start()
 {
-    DBGOUT("MainPort::start\r\n");
+    UTPDRV_TRACE("MainPort::start\r\n");
     driver_set_timer(port, timeout_check);
     main_port = this;
 }
@@ -105,7 +105,7 @@ UtpDrv::MainPort::start()
 void
 UtpDrv::MainPort::stop()
 {
-    DBGOUT("MainPort::stop\r\n");
+    UTPDRV_TRACE("MainPort::stop\r\n");
     driver_cancel_timer(port);
     main_port = 0;
 }
@@ -113,7 +113,7 @@ UtpDrv::MainPort::stop()
 void
 UtpDrv::MainPort::ready_input(long fd)
 {
-    DBGOUT("MainPort::ready_input\r\n");
+    UTPDRV_TRACE("MainPort::ready_input\r\n");
     UtpPort* up = 0;
     {
         MutexLocker lock(map_mutex);
@@ -130,20 +130,20 @@ UtpDrv::MainPort::ready_input(long fd)
 void
 UtpDrv::MainPort::process_exit(ErlDrvMonitor* monitor)
 {
-    DBGOUT("MainPort::process_exit\r\n");
+    UTPDRV_TRACE("MainPort::process_exit\r\n");
 }
 
 ErlDrvPort
 UtpDrv::MainPort::drv_port() const
 {
-    DBGOUT("MainPort::drv_port\r\n");
+    UTPDRV_TRACE("MainPort::drv_port\r\n");
     return port;
 }
 
 void
 UtpDrv::MainPort::deselect(int fd) const
 {
-    DBGOUT("MainPort::deselect\r\n");
+    UTPDRV_TRACE("MainPort::deselect\r\n");
     if (port != 0) {
         driver_select(port, reinterpret_cast<ErlDrvEvent>(fd),
                       ERL_DRV_READ|ERL_DRV_USE, 0);
@@ -155,7 +155,7 @@ UtpDrv::MainPort::deselect(int fd) const
 void
 UtpDrv::MainPort::add_monitor(const ErlDrvMonitor& mon, Handler* h)
 {
-    DBGOUT("MainPort::add_monitor\r\n");
+    UTPDRV_TRACE("MainPort::add_monitor\r\n");
     MutexLocker lock(map_mutex);
     MonMap::value_type val(mon, h);
     monmap.insert(val);
@@ -164,7 +164,7 @@ UtpDrv::MainPort::add_monitor(const ErlDrvMonitor& mon, Handler* h)
 void
 UtpDrv::MainPort::del_monitor(ErlDrvPort port, ErlDrvMonitor& mon)
 {
-    DBGOUT("MainPort::del_monitor\r\n");
+    UTPDRV_TRACE("MainPort::del_monitor\r\n");
     MutexLocker lock(map_mutex);
     monmap.erase(mon);
     driver_demonitor_process(port, &mon);
@@ -174,7 +174,7 @@ ErlDrvSSizeT
 UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
                                 char** rbuf, ErlDrvSizeT rlen)
 {
-    DBGOUT("MainPort::connect_start\r\n");
+    UTPDRV_TRACE("MainPort::connect_start\r\n");
     int arity, type, size;
     ErlDrvBinary* from = 0;
     long bin_size;
@@ -250,7 +250,7 @@ ErlDrvSSizeT
 UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
                          char** rbuf, ErlDrvSizeT rlen)
 {
-    DBGOUT("MainPort::listen\r\n");
+    UTPDRV_TRACE("MainPort::listen\r\n");
     int arity, type, size;
     unsigned long addrport;
     long bin_size;
