@@ -303,6 +303,16 @@ listen_test_() ->
                                           ok = simple_send_server(Self, Ref)
                                   end),
                        ok = simple_send_client(Ref)
+                   end)},
+               {"utp two clients test",
+                ?_test(
+                   begin
+                       Self = self(),
+                       Ref = make_ref(),
+                       spawn_link(fun() ->
+                                          ok = two_client_server(Self, Ref)
+                                  end),
+                       ok = two_clients(Ref)
                    end)}
               ]}
      end}.
@@ -328,6 +338,7 @@ simple_connect_client(Ref) ->
         {ok, {_, LPort}} ->
             {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
             true = erlang:is_port(Sock),
+            Self = self(),
             {connected, Self} = erlang:port_info(Sock, connected),
             ok = gen_utp:close(Sock),
             receive
@@ -344,10 +355,10 @@ simple_send_server(Self, Ref) ->
     {ok, LSock} = gen_utp:listen(0),
     Self ! gen_utp:sockname(LSock),
     receive
-        {utp_async, Sock, {Addr, Port}} ->
+        {utp_async, Sock, {_Addr, _Port}} ->
             receive
                 {utp, Sock, <<"simple send client">>} ->
-                    ok;
+                    ok = gen_utp:send(Sock, <<"simple send server">>);
                 Error ->
                     exit(Error)
             after
@@ -367,13 +378,84 @@ simple_send_client(Ref) ->
             {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
             ok = gen_utp:send(Sock, <<"simple send client">>),
             receive
-                {done, Ref} -> ok
+                {utp, Sock, <<"simple send server">>} ->
+                    receive
+                        {done, Ref} -> ok
+                    after
+                        5000 -> exit(failure)
+                    end
+            after
+                5000 -> exit(failure)
+            end,
+            ok = gen_utp:close(Sock)
+    after
+        5000 -> exit(failure)
+    end,
+    ok.
+
+two_client_server(Self, Ref) ->
+    {ok, LSock} = gen_utp:listen(0),
+    Self ! gen_utp:sockname(LSock),
+    receive
+        {utp_async, Sock1, {_Addr1, _Port1}} ->
+            receive
+                {utp, Sock1, <<"client1">>} ->
+                    ok = gen_utp:send(Sock1, <<"client1">>),
+                    receive
+                        {utp_async, Sock2, {_Addr2, _Port2}} ->
+                            receive
+                                {utp, Sock2, <<"client2">>} ->
+                                    ok = gen_utp:send(Sock2, <<"client2">>),
+                                    ok = gen_utp:close(Sock2);
+                                Error ->
+                                    exit(Error)
+                            after
+                                5000 -> exit(failure)
+                            end
+                    after
+                        5000 -> exit(failure)
+                    end,
+                    ok = gen_utp:close(Sock1);
+                Error ->
+                    exit(Error)
             after
                 5000 -> exit(failure)
             end
     after
         5000 -> exit(failure)
     end,
+    ok = gen_utp:close(LSock),
+    Self ! {done, Ref},
     ok.
+
+two_clients(Ref) ->
+    receive
+        {ok, {_, LPort}} ->
+            {ok, Sock1} = gen_utp:connect("127.0.0.1", LPort),
+            ok = gen_utp:send(Sock1, <<"client1">>),
+            {ok, Sock2} = gen_utp:connect("127.0.0.1", LPort),
+            receive
+                {utp, Sock1, <<"client1">>} ->
+                    ok = gen_utp:send(Sock2, <<"client2">>),
+                    receive
+                        {utp, Sock2, <<"client2">>} ->
+                            receive
+                                {done, Ref} -> ok
+                            after
+                                5000 -> exit(failure)
+                            end
+                    after
+                        5000 -> exit(failure)
+                    end
+            after
+                5000 -> exit(failure)
+            end,
+            ok = gen_utp:close(Sock1),
+            ok = gen_utp:close(Sock2)
+    after
+        5000 -> exit(failure)
+    end,
+    ok.
+
 
 -endif.

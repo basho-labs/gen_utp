@@ -47,6 +47,8 @@ struct SockAddrComp
 
 class Listener : public UtpPort
 {
+    friend class Server;
+
 public:
     explicit Listener(int sock);
     ~Listener();
@@ -57,14 +59,12 @@ public:
 
     void stop();
 
-    using UtpPort::sockname;
-    ErlDrvSSizeT peername(const char* buf, ErlDrvSizeT len, char** rbuf);
-
     void
     server_closing(Server* svr);
 
 protected:
     ErlDrvSSizeT send(const char* buf, ErlDrvSizeT len, char** rbuf);
+    ErlDrvSSizeT peername(const char* buf, ErlDrvSizeT len, char** rbuf);
 
 private:
     ErlDrvSSizeT close(const char* buf, ErlDrvSizeT len, char** rbuf);

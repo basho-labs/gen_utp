@@ -35,6 +35,7 @@ UtpDrv::Server::Server(Listener& lr, UTPSocket* us) :
     utp = us;
     set_utp_callbacks(utp);
     writable = true;
+    status = connected;
 }
 
 UtpDrv::Server::~Server()
@@ -96,7 +97,7 @@ UtpDrv::Server::do_send_to(const byte* p, size_t len, const sockaddr* to,
                            socklen_t slen)
 {
     DBGOUT("Server::do_send_to\r\n");
-    UtpPort::do_send_to(p, len, to, slen);
+    listener.do_send_to(p, len, to, slen);
 }
 
 void

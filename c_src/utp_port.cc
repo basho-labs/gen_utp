@@ -29,18 +29,18 @@
 
 using namespace UtpDrv;
 
-UtpDrv::UtpPort::~UtpPort()
-{
-    if (caller_ref != 0) {
-        driver_free_binary(caller_ref);
-    }
-}
-
 UtpDrv::UtpPort::UtpPort(int sock) :
     port(0), owner(driver_term_nil), pdl(0), caller(driver_term_nil),
     utp(0), caller_ref(0), status(not_connected),
     udp_sock(sock), state(0), error_code(0), writable(false), mon_valid(false)
 {
+}
+
+UtpDrv::UtpPort::~UtpPort()
+{
+    if (caller_ref != 0) {
+        driver_free_binary(caller_ref);
+    }
 }
 
 void
