@@ -44,6 +44,12 @@ UtpDrv::SockAddr::SockAddr(const sockaddr& sa, socklen_t sl) : slen(sl)
 
 UtpDrv::SockAddr::SockAddr(const char* addrstr, unsigned short port)
 {
+    from_addrport(addrstr, port);
+}
+
+void
+UtpDrv::SockAddr::from_addrport(const char* addrstr, unsigned short port)
+{
     memset(&addr, 0, sizeof addr);
     sockaddr* sa = reinterpret_cast<sockaddr*>(&addr);
     addrinfo hints;

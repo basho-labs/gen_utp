@@ -202,8 +202,7 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
 
     SockAddr addr;
     try {
-        SockAddr sa(addrstr, addrport);
-        addr = sa;
+        addr.from_addrport(addrstr, addrport);
     } catch (const BadSockAddr&) {
         driver_free_binary(from);
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
