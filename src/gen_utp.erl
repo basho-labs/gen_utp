@@ -97,18 +97,40 @@ connect(Addr, Port, Opts) ->
         {error, _}=Err ->
             Err;
         _ ->
-            Args = {connect, AddrStr, Port, Opts},
-            case gen_server:call(?MODULE, Args, infinity) of
-                {ok, Sock} ->
-                    validate_connect(Sock);
-                Fail ->
-                    Fail
+            Ref = make_ref(),
+            From = {self(), Ref},
+            Args = term_to_binary({AddrStr, Port, Opts, term_to_binary(From)}),
+            try
+                erlang:port_control(utpdrv, ?UTP_CONNECT_START, Args),
+                receive
+                    {ok, Sock, From} ->
+                        validate_connect(Sock);
+                    {error, Fail, From} ->
+                        {error, Fail}
+                end
+            catch
+                _:Reason ->
+                    {error, Reason}
             end
     end.
 
 -spec listen(utpport()) -> {ok, utpsock()} | {error, any()}.
 listen(Port) ->
-    gen_server:call(?MODULE, {listen, Port}, infinity).
+    Ref = make_ref(),
+    From = {self(), Ref},
+    Args = term_to_binary({Port, term_to_binary(From)}),
+    try
+        erlang:port_control(utpdrv, ?UTP_LISTEN, Args),
+        receive
+            {ok, Sock, From} ->
+                {ok, Sock};
+            {error, Fail, From} ->
+                {error, Fail}
+        end
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
 
 -spec close(utpsock()) -> ok.
 close(Sock) ->
@@ -187,26 +209,6 @@ init([]) ->
     end.
 
 -spec handle_call(any(), from(), utpstate()) -> {reply, any(), utpstate()}.
-handle_call({connect, Addr, Port, Opts}, From, #state{port=P}=State) ->
-    Caller = term_to_binary(From),
-    Args = term_to_binary({Addr, Port, Opts, Caller}),
-    try
-        erlang:port_control(P, ?UTP_CONNECT_START, Args),
-        {noreply, State}
-    catch
-        _:Reason ->
-            {error, Reason}
-    end;
-handle_call({listen, Port}, From, #state{port=P}=State) ->
-    Caller = term_to_binary(From),
-    Args = term_to_binary({Port, Caller}),
-    try
-        erlang:port_control(P, ?UTP_LISTEN, Args),
-        {noreply, State}
-    catch
-        _:Reason ->
-            {error, Reason}
-    end;
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -218,14 +220,6 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(any(), utpstate()) -> {noreply, utpstate()}.
-handle_info({ok, Sock, {Pid,_}=From}, State) ->
-    true = erlang:port_connect(Sock, Pid),
-    unlink(Sock),
-    gen_server:reply(From, {ok, Sock}),
-    {noreply, State};
-handle_info({error, Reason, From}, State) ->
-    gen_server:reply(From, {error, Reason}),
-    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
