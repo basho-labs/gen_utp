@@ -82,11 +82,28 @@ connect(Addr, Port, Opts) when is_tuple(Addr) ->
             throw(badarg)
     end;
 connect(Addr, Port, Opts) ->
-    case gen_server:call(?MODULE, {connect, Addr, Port, Opts}, infinity) of
-        {ok, Sock} ->
-            validate_connect(Sock);
-        Fail ->
-            Fail
+    AddrStr = case inet:getaddr(Addr, inet) of
+                  {ok, AddrTuple} ->
+                      inet_parse:ntoa(AddrTuple);
+                  _ ->
+                      case inet:getaddr(Addr, inet6) of
+                          {ok, AddrTuple} ->
+                              inet_parse:ntoa(AddrTuple);
+                          Error ->
+                              Error
+                      end
+              end,
+    case AddrStr of
+        {error, _}=Err ->
+            Err;
+        _ ->
+            Args = {connect, AddrStr, Port, Opts},
+            case gen_server:call(?MODULE, Args, infinity) of
+                {ok, Sock} ->
+                    validate_connect(Sock);
+                Fail ->
+                    Fail
+            end
     end.
 
 -spec listen(utpport()) -> {ok, utpsock()} | {error, any()}.
