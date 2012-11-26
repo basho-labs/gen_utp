@@ -68,12 +68,12 @@ stop() ->
     gen_server:cast(?MODULE, stop).
 
 -spec connect(utpaddr(), utpport()) -> {ok, utpsock()} | {error, any()}.
-connect(Addr, Port) ->
+connect(Addr, Port) when Port > 0, Port =< 65535 ->
     connect(Addr, Port, []).
 
 -spec connect(utpaddr(), utpport(), utpconnopts()) -> {ok, utpsock()} |
                                                       {error, any()}.
-connect(Addr, Port, Opts) when is_tuple(Addr) ->
+connect(Addr, Port, Opts) when is_tuple(Addr), Port > 0, Port =< 65535 ->
     try inet_parse:ntoa(Addr) of
         ListAddr ->
             connect(ListAddr, Port, Opts)
@@ -81,7 +81,7 @@ connect(Addr, Port, Opts) when is_tuple(Addr) ->
         _:_ ->
             throw(badarg)
     end;
-connect(Addr, Port, Opts) ->
+connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
     AddrStr = case inet:getaddr(Addr, inet) of
                   {ok, AddrTuple} ->
                       inet_parse:ntoa(AddrTuple);
@@ -115,7 +115,7 @@ connect(Addr, Port, Opts) ->
     end.
 
 -spec listen(utpport()) -> {ok, utpsock()} | {error, any()}.
-listen(Port) ->
+listen(Port) when Port >= 0, Port =< 65535->
     Ref = make_ref(),
     From = {self(), Ref},
     Args = term_to_binary({Port, term_to_binary(From)}),
@@ -268,6 +268,28 @@ cleanup(_) ->
                     end
             end,
     Check(Check).
+
+port_number_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun (_) ->
+             {"uTP port number range test",
+              ?_test(
+                 begin
+                     Error = {error, function_clause},
+                     Error = try gen_utp:listen(-1)
+                             catch C1:R1 -> {C1,R1} end,
+                     Error = try gen_utp:listen(65536)
+                             catch C2:R2 -> {C2,R2} end,
+                     Error = try gen_utp:connect("localhost", -1)
+                             catch C3:R3 -> {C3,R3} end,
+                     Error = try gen_utp:connect("localhost", 0)
+                             catch C4:R4 -> {C4,R4} end,
+                     Error = try gen_utp:connect("localhost", 65536)
+                             catch C5:R5 -> {C5,R5} end
+                 end)}
+     end}.
 
 listen_test_() ->
     {setup,
