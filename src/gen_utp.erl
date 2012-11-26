@@ -266,7 +266,14 @@ setup() ->
     gen_utp:start().
 
 cleanup(_) ->
-    gen_utp:stop().
+    gen_utp:stop(),
+    Check = fun(F) ->
+                    case whereis(gen_utp) of
+                        undefined -> ok;
+                        _ -> F(F)
+                    end
+            end,
+    Check(Check).
 
 listen_test_() ->
     {setup,
@@ -274,7 +281,7 @@ listen_test_() ->
      fun cleanup/1,
      fun (_) ->
              {inorder,
-              [{"utp simple listen test",
+              [{"uTP simple listen test",
                 ?_test(
                    begin
                        Ports = length(erlang:ports()),
@@ -289,10 +296,11 @@ listen_test_() ->
                        true = is_number(Port),
                        {error, enotconn} = gen_utp:peername(LSock),
                        ok = gen_utp:close(LSock),
+                       undefined = erlang:port_info(LSock),
                        Ports = length(erlang:ports()),
                        ok
                    end)},
-               {"utp two listen test",
+               {"uTP two listen test",
                 ?_test(
                    begin
                        {ok, LSock1} = gen_utp:listen(0),
@@ -300,8 +308,34 @@ listen_test_() ->
                        ok = gen_utp:close(LSock1),
                        {ok, LSock2} = gen_utp:listen(Port),
                        ok = gen_utp:close(LSock2)
-                   end)},
-               {"utp simple connect test",
+                   end)}
+              ]}
+     end}.
+
+client_timeout_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun (_) ->
+             {timeout, 15,
+              [{"uTP client timeout test",
+                ?_test(
+                   begin
+                       {ok, LSock} = gen_utp:listen(0),
+                       {ok, {Addr, Port}} = gen_utp:sockname(LSock),
+                       ok = gen_utp:close(LSock),
+                       {error, etimedout} = gen_utp:connect(Addr, Port)
+                   end)}
+              ]}
+     end}.
+
+client_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun (_) ->
+             {inorder,
+              [{"uTP simple connect test",
                 ?_test(
                    begin
                        Self = self(),
@@ -311,7 +345,7 @@ listen_test_() ->
                                   end),
                        ok = simple_connect_client(Ref)
                    end)},
-               {"utp simple send test",
+               {"uTP simple send test",
                 ?_test(
                    begin
                        Self = self(),
@@ -321,7 +355,7 @@ listen_test_() ->
                                   end),
                        ok = simple_send_client(Ref)
                    end)},
-               {"utp two clients test",
+               {"uTP two clients test",
                 ?_test(
                    begin
                        Self = self(),
