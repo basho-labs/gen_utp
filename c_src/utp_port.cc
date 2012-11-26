@@ -73,15 +73,12 @@ UtpDrv::UtpPort::input_ready()
     DBGOUT("UtpPort::input_ready\r\n");
     byte buf[4096];
     SockAddr addr;
-    socklen_t salen = sizeof addr;
-    int len = recvfrom(udp_sock, buf, sizeof buf, 0,
-                       reinterpret_cast<sockaddr*>(&addr), &salen);
+    int len = recvfrom(udp_sock, buf, sizeof buf, 0, addr, &addr.slen);
     if (len > 0) {
         MutexLocker lock(utp_mutex);
         UTP_IsIncomingUTP(&UtpPort::utp_incoming,
                           &UtpPort::send_to, this,
-                          buf, len,
-                          reinterpret_cast<sockaddr*>(&addr), salen);
+                          buf, len, addr, addr.slen);
     }
 }
 
@@ -114,12 +111,10 @@ UtpDrv::UtpPort::sockname(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
     DBGOUT("UtpPort::sockname\r\n");
     SockAddr addr;
-    socklen_t slen = sizeof addr;
-    sockaddr* sa = reinterpret_cast<sockaddr*>(&addr);
-    if (getsockname(udp_sock, sa, &slen) < 0) {
+    if (getsockname(udp_sock, addr, &addr.slen) < 0) {
         return encode_error(rbuf, errno);
     }
-    return encode_addrport(rbuf, addr, slen);
+    return addr.encode(rbuf);
 }
 
 ErlDrvSSizeT
@@ -130,13 +125,11 @@ UtpDrv::UtpPort::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
         return encode_error(rbuf, ENOTCONN);
     }
     SockAddr addr;
-    socklen_t slen = sizeof addr;
-    memset(&addr, 0, sizeof addr);
     {
         MutexLocker lock(utp_mutex);
-        UTP_GetPeerName(utp, reinterpret_cast<sockaddr*>(&addr), &slen);
+        UTP_GetPeerName(utp, addr, &addr.slen);
     }
-    return encode_addrport(rbuf, addr, slen);
+    return addr.encode(rbuf);
 }
 
 ErlDrvSSizeT

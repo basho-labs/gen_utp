@@ -33,18 +33,6 @@ namespace UtpDrv {
 
 class Server;
 
-struct SockAddrComp
-{
-    bool
-    operator()(const SockAddr& s1, const SockAddr& s2) {
-        if (s1.ss_family == s2.ss_family) {
-            return memcmp(&s1, &s2, sizeof s1) < 0;
-        } else {
-            return s1.ss_family < s2.ss_family;
-        }
-    }
-};
-
 class Listener : public UtpPort
 {
     friend class Server;
@@ -69,7 +57,7 @@ protected:
 private:
     ErlDrvSSizeT close(const char* buf, ErlDrvSizeT len, char** rbuf);
 
-    typedef std::map<SockAddr, Server*, SockAddrComp> AddrMap;
+    typedef std::map<SockAddr, Server*> AddrMap;
     typedef std::map<Server*, SockAddr> ServerMap;
     AddrMap addrs;
     ServerMap servers;

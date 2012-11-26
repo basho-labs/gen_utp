@@ -41,7 +41,7 @@ public:
 
     void stop();
 
-    void connect_to(const SockAddr& addr, socklen_t slen);
+    void connect_to(const SockAddr& addr);
 
 private:
     ErlDrvSSizeT

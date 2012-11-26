@@ -68,7 +68,7 @@ UtpDrv::Client::stop()
 }
 
 void
-UtpDrv::Client::connect_to(const SockAddr& addr, socklen_t slen)
+UtpDrv::Client::connect_to(const SockAddr& addr)
 {
     DBGOUT("Client::connect_to\r\n");
     status = connect_pending;
@@ -76,9 +76,8 @@ UtpDrv::Client::connect_to(const SockAddr& addr, socklen_t slen)
         driver_free_binary(caller_ref);
         caller_ref = 0;
     }
-    const sockaddr* saddr = reinterpret_cast<const sockaddr*>(&addr);
     MutexLocker lock(utp_mutex);
-    utp = UTP_Create(&Client::send_to, this, saddr, slen);
+    utp = UTP_Create(&Client::send_to, this, addr, addr.slen);
     set_utp_callbacks(utp);
     UTP_Connect(utp);
 }

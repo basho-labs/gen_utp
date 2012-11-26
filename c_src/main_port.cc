@@ -201,8 +201,10 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
     }
 
     SockAddr addr;
-    socklen_t slen;
-    if (!addrport_to_sockaddr(addrstr, addrport, addr, slen)) {
+    try {
+        SockAddr sa(addrstr, addrport);
+        addr = sa;
+    } catch (const BadSockAddr&) {
         driver_free_binary(from);
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
@@ -229,7 +231,7 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
     }
     ErlDrvEvent ev = reinterpret_cast<ErlDrvEvent>(udp_sock);
     driver_select(port, ev, ERL_DRV_READ|ERL_DRV_USE, 1);
-    client->connect_to(addr, slen);
+    client->connect_to(addr);
     {
         ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(from->orig_bytes);
         ErlDrvTermData term[] = {

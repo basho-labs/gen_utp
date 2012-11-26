@@ -122,9 +122,7 @@ UtpDrv::Listener::do_incoming(UTPSocket* utp)
 {
     DBGOUT("Listener::do_incoming\r\n");
     SockAddr addr;
-    socklen_t addrlen = sizeof addr;
-    memset(&addr, 0, sizeof addr);
-    UTP_GetPeerName(utp, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+    UTP_GetPeerName(utp, addr, &addr.slen);
     AddrMap::iterator it;
     {
         MutexLocker lock(sm_mutex);
@@ -146,7 +144,7 @@ UtpDrv::Listener::do_incoming(UTPSocket* utp)
             }
             char str[INET6_ADDRSTRLEN];
             unsigned short addrport;
-            sockaddr_to_addrport(addr, addrlen, str, sizeof str, addrport);
+            addr.to_addrport(str, sizeof str, addrport);
             ErlDrvTermData strdata = reinterpret_cast<ErlDrvTermData>(str);
             ErlDrvTermData term[] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),

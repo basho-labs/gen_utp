@@ -23,6 +23,7 @@
 //
 // -------------------------------------------------------------------
 
+#include <exception>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netdb.h>
@@ -33,7 +34,21 @@
 namespace UtpDrv {
 
 class UtpPort;
-typedef sockaddr_storage SockAddr;
+
+struct BadSockAddr : public std::exception {};
+
+struct SockAddr {
+    sockaddr_storage addr;
+    socklen_t slen;
+    SockAddr();
+    SockAddr(const sockaddr& sa, socklen_t sl);
+    SockAddr(const char* addrstr, unsigned short port);
+    void to_addrport(char* addrstr, size_t alen, unsigned short& port) const;
+    ErlDrvSSizeT encode(char** rbuf) const;
+    bool operator<(const SockAddr& sa) const;
+    operator sockaddr*();
+    operator const sockaddr*() const;
+};
 
 extern ErlDrvSSizeT
 encode_atom(char** rbuf, const char* atom);
@@ -43,17 +58,6 @@ encode_error(char** rbuf, const char* error);
 
 extern ErlDrvSSizeT
 encode_error(char** rbuf, int error);
-
-extern ErlDrvSSizeT
-encode_addrport(char** rbuf, const SockAddr& addr, socklen_t slen);
-
-extern bool
-addrport_to_sockaddr(const char* addr, unsigned short port,
-                     SockAddr& sa_arg, socklen_t& slen);
-
-extern bool
-sockaddr_to_addrport(const SockAddr& sa_arg, socklen_t slen,
-                     char* addr, size_t addrlen, unsigned short& port);
 
 extern int
 open_udp_socket(int& udp_sock, unsigned short port = 0);
