@@ -22,7 +22,6 @@
 
 #include "main_port.h"
 #include "globals.h"
-#include "utils.h"
 #include "locker.h"
 #include "libutp/utp.h"
 #include "utp_port.h"
@@ -82,11 +81,11 @@ UtpDrv::MainPort::control(unsigned command, const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACE("MainPort::control\r\n");
     switch (command) {
-    case UTP_CONNECT_START:
-        return connect_start(buf, len, rbuf, rlen);
-        break;
     case UTP_LISTEN:
         return listen(buf, len, rbuf, rlen);
+        break;
+    case UTP_CONNECT_START:
+        return connect_start(buf, len, rbuf, rlen);
         break;
     default:
         return encode_error(rbuf, "enotsup");
@@ -125,6 +124,12 @@ UtpDrv::MainPort::ready_input(long fd)
     if (up != 0) {
         up->input_ready();
     }
+}
+
+void
+UtpDrv::MainPort::outputv(const ErlIOVec&)
+{
+    UTPDRV_TRACE("MainPort::outputv\r\n");
 }
 
 void
@@ -176,7 +181,7 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACE("MainPort::connect_start\r\n");
     int arity, type, size;
-    ErlDrvBinary* from = 0;
+    Binary from;
     long bin_size;
     char addrstr[INET6_ADDRSTRLEN];
     unsigned long addrport;
@@ -194,8 +199,7 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
         if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        from = driver_alloc_binary(size);
-        decoder.binary(from->orig_bytes, bin_size);
+        bin_size = from.decode(decoder, size);
     } catch (const EiError&) {
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
@@ -204,14 +208,12 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
     try {
         addr.from_addrport(addrstr, addrport);
     } catch (const BadSockAddr&) {
-        driver_free_binary(from);
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
 
     int udp_sock;
     int err = open_udp_socket(udp_sock);
     if (err != 0) {
-        driver_free_binary(from);
         return encode_error(rbuf, err);
     }
     Client* client = new Client(udp_sock);
@@ -220,7 +222,6 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
     if (!client->set_port(new_port)) {
         driver_failure_atom(new_port,
                             const_cast<char*>("port_data_lock_failed"));
-        driver_free_binary(from);
         return encode_error(rbuf, "noproc");
     }
     {
@@ -232,15 +233,13 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
     driver_select(port, ev, ERL_DRV_READ|ERL_DRV_USE, 1);
     client->connect_to(addr);
     {
-        ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(from->orig_bytes);
         ErlDrvTermData term[] = {
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
             ERL_DRV_PORT, driver_mk_port(new_port),
-            ERL_DRV_EXT2TERM, ext, bin_size,
+            ERL_DRV_EXT2TERM, from, bin_size,
             ERL_DRV_TUPLE, 3,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
-        driver_free_binary(from);
     }
     return 0;
 }
@@ -251,36 +250,54 @@ UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACE("MainPort::listen\r\n");
     int arity, type, size;
-    unsigned long addrport;
-    long bin_size;
-    ErlDrvBinary* from = 0;
+    Binary ref, binopts;
     try {
         EiDecoder decoder(buf, len);
         decoder.tuple_header(arity);
         if (arity != 2) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        decoder.ulong(addrport);
         decoder.type(type, size);
         if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        from = driver_alloc_binary(size);
-        decoder.binary(from->orig_bytes, bin_size);
+        binopts.decode(decoder, size);
+        decoder.type(type, size);
+        if (type != ERL_BINARY_EXT) {
+            return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+        }
+        ref.decode(decoder, size);
     } catch (const EiError&) {
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
-
-    ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(from->orig_bytes);
     ErlDrvTermData caller = driver_caller(port);
-    int udp_sock;
-    int err = open_udp_socket(udp_sock, addrport);
+
+    ListenOpts opts;
+    decode_listen_opts(binopts, opts);
+    int udp_sock, err;
+    if (opts.fd != -1) {
+        udp_sock = opts.fd;
+        SockAddr fdaddr;
+        if (getsockname(udp_sock, fdaddr, &fdaddr.slen) < 0) {
+            err = errno;
+        } else {
+            err = 0;
+        }
+    } else if (opts.addr_set) {
+        err = open_udp_socket(udp_sock, opts.addr);
+    } else if (opts.inet6) {
+        SockAddr in6_any("::", 0);
+        err = open_udp_socket(udp_sock, in6_any);
+    } else {
+        err = open_udp_socket(udp_sock, opts.port);
+    }
     if (err != 0) {
         ErlDrvTermData term[] = {
+            ERL_DRV_EXT2TERM, ref, ref.size(),
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
             ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
-            ERL_DRV_EXT2TERM, ext, bin_size,
-            ERL_DRV_TUPLE, 3,
+            ERL_DRV_TUPLE, 2,
+            ERL_DRV_TUPLE, 2,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
     } else {
@@ -291,20 +308,68 @@ UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
         if (!listener->set_port(new_port)) {
             driver_failure_atom(new_port,
                                 const_cast<char*>("port_data_lock_failed"));
-            driver_free_binary(from);
             return encode_error(rbuf, "noproc");
         }
         ErlDrvTermData term[] = {
+            ERL_DRV_EXT2TERM, ref, ref.size(),
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
             ERL_DRV_PORT, driver_mk_port(new_port),
-            ERL_DRV_EXT2TERM, ext, bin_size,
-            ERL_DRV_TUPLE, 3,
+            ERL_DRV_TUPLE, 2,
+            ERL_DRV_TUPLE, 2,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
         FdMap::value_type val(udp_sock, listener);
         MutexLocker lock(map_mutex);
         fdmap.insert(val);
     }
-    driver_free_binary(from);
     return 0;
+}
+
+void
+UtpDrv::MainPort::decode_listen_opts(const Binary& bin, ListenOpts& opts)
+{
+    const char* data = bin.data();
+    const char* end = data + bin.size();
+    while (data < end) {
+        switch (*data++) {
+        case UTP_IP:
+            strcpy(opts.addrstr, data);
+            data += strlen(data) + 1;
+            opts.addr_set = true;
+            break;
+        case UTP_FD:
+            opts.fd = ntohl(*reinterpret_cast<const uint32_t*>(data));
+            data += 4;
+            break;
+        case UTP_PORT:
+            opts.port = ntohs(*reinterpret_cast<const uint16_t*>(data));
+            data += 2;
+            break;
+        case UTP_LIST:
+            opts.binary = false;
+            break;
+        case UTP_BINARY:
+            opts.binary = true;
+            break;
+        case UTP_INET:
+            opts.inet6 = false;
+            if (!opts.addr_set) {
+                strcpy(opts.addrstr, "0.0.0.0");
+            }
+            break;
+        case UTP_INET6:
+            opts.inet6 = true;
+            if (!opts.addr_set) {
+                strcpy(opts.addrstr, "::");
+            }
+            break;
+        }
+    }
+    opts.addr.from_addrport(opts.addrstr, opts.port);
+}
+
+UtpDrv::MainPort::ListenOpts::ListenOpts() :
+    fd(-1), binary(true), inet6(false), addr_set(false)
+{
+    strcpy(addrstr, "0.0.0.0");
 }

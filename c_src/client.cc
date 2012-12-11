@@ -23,6 +23,7 @@
 #include "client.h"
 #include "globals.h"
 #include "locker.h"
+#include "drv_types.h"
 
 
 using namespace UtpDrv;
@@ -49,8 +50,6 @@ UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
         return UtpPort::sockname(buf, len, rbuf);
     case UTP_PEERNAME:
         return peername(buf, len, rbuf);
-    case UTP_SEND:
-        return send(buf, len, rbuf);
     case UTP_CLOSE:
         return close(buf, len, rbuf);
     default:
@@ -72,10 +71,7 @@ UtpDrv::Client::connect_to(const SockAddr& addr)
 {
     UTPDRV_TRACE("Client::connect_to\r\n");
     status = connect_pending;
-    if (caller_ref != 0) {
-        driver_free_binary(caller_ref);
-        caller_ref = 0;
-    }
+    caller_ref.reset();
     MutexLocker lock(utp_mutex);
     utp = UTP_Create(&Client::send_to, this, addr, addr.slen);
     set_utp_callbacks(utp);
@@ -141,8 +137,7 @@ ErlDrvSSizeT
 UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
     UTPDRV_TRACE("Client::connect_validate\r\n");
-    ErlDrvBinary* ref = 0;
-    long bin_size;
+    Binary ref;
     try {
         int type, size;
         EiDecoder decoder(buf, len);
@@ -150,12 +145,8 @@ UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf)
         if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        ref = driver_alloc_binary(size);
-        decoder.binary(ref->orig_bytes, bin_size);
+        ref.decode(decoder, size);
     } catch (const EiError&) {
-        if (ref != 0) {
-            driver_free_binary(ref);
-        }
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
 
@@ -163,28 +154,25 @@ UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf)
     switch (status) {
     case connect_pending:
         encoder.atom("wait");
-        caller_ref = ref;
+        caller_ref.swap(ref);
         break;
 
     case connect_failed:
         encoder.tuple_header(2).atom("error").atom(erl_errno_id(error_code));
         status = not_connected;
-        driver_free_binary(ref);
         break;
 
     case connected:
         encoder.atom("ok");
-        driver_free_binary(ref);
         break;
 
     default:
         encoder.tuple_header(2).atom("error");
         {
-            char err[64];
+            char err[128];
             sprintf(err, "utpdrv illegal connect state: %d", status);
             encoder.string(err);
         }
-        driver_free_binary(ref);
         break;
     }
     ErlDrvSSizeT retsize;

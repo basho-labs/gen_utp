@@ -45,13 +45,14 @@ public:
     control(unsigned command, const char* buf, ErlDrvSizeT len,
             char** rbuf, ErlDrvSizeT rlen);
 
+    void outputv(const ErlIOVec& ev);
+
     void stop();
 
     void
     server_closing(Server* svr);
 
 protected:
-    ErlDrvSSizeT send(const char* buf, ErlDrvSizeT len, char** rbuf);
     ErlDrvSSizeT peername(const char* buf, ErlDrvSizeT len, char** rbuf);
 
 private:

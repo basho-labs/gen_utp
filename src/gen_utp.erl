@@ -28,8 +28,9 @@
 -endif.
 
 -export([start_link/0, start/0, stop/0,
+         listen/1, listen/2,
          connect/2, connect/3,
-         listen/1, close/1, send/2,
+         close/1, send/2,
          sockname/1, peername/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -38,20 +39,33 @@
           port :: port()
          }).
 
--define(UTP_CONNECT_START, 1).
--define(UTP_CONNECT_VALIDATE, 2).
--define(UTP_LISTEN, 3).
--define(UTP_SEND, 4).
--define(UTP_RECV, 5).
--define(UTP_CLOSE, 6).
--define(UTP_SOCKNAME, 7).
--define(UTP_PEERNAME, 8).
+%% driver command IDs
+-define(UTP_LISTEN, 1).
+-define(UTP_CONNECT_START, 2).
+-define(UTP_CONNECT_VALIDATE, 3).
+-define(UTP_RECV, 4).
+-define(UTP_CLOSE, 5).
+-define(UTP_SOCKNAME, 6).
+-define(UTP_PEERNAME, 7).
+
+%% IDs for listen options
+-define(UTP_IP, 1).
+-define(UTP_FD, 2).
+-define(UTP_PORT, 3).
+-define(UTP_LIST, 4).
+-define(UTP_BINARY, 5).
+-define(UTP_INET, 6).
+-define(UTP_INET6, 7).
 
 -type utpstate() :: #state{}.
 -type from() :: {pid(), any()}.
 -type utpaddr() :: inet:ip_address() | inet:hostname().
 -type utpport() :: inet:port_number().
 -type utpsock() :: port().
+-type utplsnopt() :: {ip,utpaddr()} | {ifaddr,utpaddr()} |
+                     {fd,non_neg_integer()} | {port, utpport()} |
+                     list | binary | inet | inet6.
+-type utplsnopts() :: [utplsnopt()].
 %%-type utpconnopt() ::
 -type utpconnopts() :: [any()].
 
@@ -66,6 +80,26 @@ start() ->
 -spec stop() -> ok.
 stop() ->
     gen_server:cast(?MODULE, stop).
+
+-spec listen(utpport()) -> {ok, utpsock()} | {error, any()}.
+listen(Port) when Port >= 0, Port < 65536 ->
+    listen(Port, []).
+
+-spec listen(utpport(), utplsnopts()) -> {ok, utpsock()} | {error, any()}.
+listen(Port, Options) when Port >= 0, Port < 65536 ->
+    OptBin = options_to_binary(listen, [{port,Port}|Options]),
+    Ref = make_ref(),
+    Args = term_to_binary({OptBin, term_to_binary(Ref)}),
+    try
+        erlang:port_control(utpdrv, ?UTP_LISTEN, Args),
+        receive
+            {Ref, Result} ->
+                Result
+        end
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
 
 -spec connect(utpaddr(), utpport()) -> {ok, utpsock()} | {error, any()}.
 connect(Addr, Port) when Port > 0, Port =< 65535 ->
@@ -114,24 +148,6 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
             end
     end.
 
--spec listen(utpport()) -> {ok, utpsock()} | {error, any()}.
-listen(Port) when Port >= 0, Port =< 65535->
-    Ref = make_ref(),
-    From = {self(), Ref},
-    Args = term_to_binary({Port, term_to_binary(From)}),
-    try
-        erlang:port_control(utpdrv, ?UTP_LISTEN, Args),
-        receive
-            {ok, Sock, From} ->
-                {ok, Sock};
-            {error, Fail, From} ->
-                {error, Fail}
-        end
-    catch
-        _:Reason ->
-            {error, Reason}
-    end.
-
 -spec close(utpsock()) -> ok.
 close(Sock) ->
     Ref = make_ref(),
@@ -150,8 +166,16 @@ close(Sock) ->
 
 -spec send(utpsock(), iodata()) -> ok | {error, any()}.
 send(Sock, Data) ->
-    Result = erlang:port_control(Sock, ?UTP_SEND, Data),
-    binary_to_term(Result).
+    try
+        true = erlang:port_command(Sock, Data),
+        receive
+            {utp_reply, Sock, Result} ->
+                Result
+        end
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
 
 -spec sockname(utpsock()) -> {ok, {utpaddr(), utpport()}} | {error, any()}.
 sockname(Sock) ->
@@ -194,9 +218,10 @@ init([]) ->
                      ok -> ok;
                      {error, already_loaded} -> ok;
                      {error, LoadError} ->
+                         LoadErrorStr = erl_ddll:format_error(LoadError),
                          ErrStr = lists:flatten(
                                     io_lib:format("could not load driver ~s: ~p",
-                                                  [Shlib, LoadError])),
+                                                  [Shlib, LoadErrorStr])),
                          {stop, ErrStr}
                  end,
     case LoadResult of
@@ -233,6 +258,7 @@ terminate(_Reason, #state{port=Port}) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+-spec validate_connect(utpsock()) -> {ok, utpsock()} | {error, any()}.
 validate_connect(Sock) ->
     Ref = make_ref(),
     Args = term_to_binary(term_to_binary(Ref)),
@@ -251,6 +277,97 @@ validate_connect(Sock) ->
         Error ->
             erlang:port_close(Sock),
             Error
+    end.
+
+-record(listen_opts, {
+          delivery,
+          ip,
+          port,
+          fd,
+          family
+         }).
+-spec options_to_binary(listen, utplsnopts()) -> binary().
+options_to_binary(listen, Opts) ->
+    options_to_binary(listen, Opts, #listen_opts{}).
+-spec options_to_binary(listen, utplsnopts(), #listen_opts{}) -> binary().
+options_to_binary(listen, [], ListenOpts) ->
+    OptBin0 = case ListenOpts#listen_opts.delivery of
+                  undefined ->
+                      <<?UTP_BINARY:8>>;
+                  binary ->
+                      <<?UTP_BINARY:8>>;
+                  list ->
+                      <<?UTP_LIST:8>>
+              end,
+    OptBin1 = case ListenOpts#listen_opts.family of
+                  undefined ->
+                      <<OptBin0/binary, ?UTP_INET:8>>;
+                  inet ->
+                      <<OptBin0/binary, ?UTP_INET:8>>;
+                  inet6 ->
+                      <<OptBin0/binary, ?UTP_INET6:8>>
+              end,
+    OptBin2 = case ListenOpts#listen_opts.ip of
+                  undefined ->
+                      OptBin1;
+                  AddrStr ->
+                      list_to_binary([OptBin1, ?UTP_IP, AddrStr, 0])
+              end,
+    Port = ListenOpts#listen_opts.port,
+    OptBin3 = <<OptBin2/binary, ?UTP_PORT:8, Port:16/big>>,
+    case ListenOpts#listen_opts.fd of
+        undefined ->
+            OptBin3;
+        Fd ->
+            <<OptBin3/binary, ?UTP_FD:8, Fd:32/big>>
+    end;
+options_to_binary(listen, [{ip,IpAddr}|Opts], ListenOpts) ->
+    NewOpts = ipaddr_to_opts(IpAddr, ListenOpts),
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [{ifaddr,IpAddr}|Opts], ListenOpts) ->
+    NewOpts = ipaddr_to_opts(IpAddr, ListenOpts),
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [{fd,Fd}|Opts], ListenOpts) when is_integer(Fd) ->
+    NewOpts = ListenOpts#listen_opts{fd=Fd},
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [{port,Port}|Opts], ListenOpts)
+  when is_integer(Port), Port >= 0, Port < 65536 ->
+    NewOpts = ListenOpts#listen_opts{port=Port},
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [list|Opts], ListenOpts) ->
+    NewOpts = ListenOpts#listen_opts{delivery=list},
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [binary|Opts], ListenOpts) ->
+    NewOpts = ListenOpts#listen_opts{delivery=binary},
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [inet|Opts], ListenOpts) ->
+    NewOpts = ListenOpts#listen_opts{family=inet},
+    options_to_binary(listen, Opts, NewOpts);
+options_to_binary(listen, [inet6|Opts], ListenOpts) ->
+    NewOpts = ListenOpts#listen_opts{family=inet6},
+    options_to_binary(listen, Opts, NewOpts).
+
+-spec ipaddr_to_opts(utpaddr(), #listen_opts{}) -> #listen_opts{}.
+ipaddr_to_opts(Addr, ListenOpts) when is_tuple(Addr) ->
+    try inet_parse:ntoa(Addr) of
+        ListAddr ->
+            ipaddr_to_opts(ListAddr, ListenOpts)
+    catch
+        _:_ ->
+            throw(badarg)
+    end;
+ipaddr_to_opts(Addr, ListenOpts) when is_list(Addr) ->
+    case inet:getaddr(Addr, inet) of
+        {ok, AddrTuple} ->
+            ListenOpts#listen_opts{family=inet, ip=inet_parse:ntoa(AddrTuple)};
+        _ ->
+            case inet:getaddr(Addr, inet6) of
+                {ok, AddrTuple} ->
+                    ListenOpts#listen_opts{family=inet6,
+                                           ip=inet_parse:ntoa(AddrTuple)};
+                _Error ->
+                    throw(badarg)
+            end
     end.
 
 
@@ -323,6 +440,16 @@ listen_test_() ->
                        {ok, {_, Port}} = gen_utp:sockname(LSock1),
                        ok = gen_utp:close(LSock1),
                        {ok, LSock2} = gen_utp:listen(Port),
+                       ok = gen_utp:close(LSock2)
+                   end)},
+               {"uTP specific interface listen test",
+                ?_test(
+                   begin
+                       {ok, LSock1} = gen_utp:listen(0, [{ip, "127.0.0.1"}]),
+                       {ok, {{127,0,0,1}, _}} = gen_utp:sockname(LSock1),
+                       ok = gen_utp:close(LSock1),
+                       {ok, LSock2} = gen_utp:listen(0, [{ifaddr, "127.0.0.1"}]),
+                       {ok, {{127,0,0,1}, _}} = gen_utp:sockname(LSock2),
                        ok = gen_utp:close(LSock2)
                    end)}
               ]}

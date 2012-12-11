@@ -45,6 +45,7 @@ struct SockAddr {
     SockAddr(const char* addrstr, unsigned short port);
     void from_addrport(const char* addrstr, unsigned short port);
     void to_addrport(char* addrstr, size_t alen, unsigned short& port) const;
+    int family() const;
     ErlDrvSSizeT encode(char** rbuf) const;
     bool operator<(const SockAddr& sa) const;
     operator sockaddr*();
@@ -62,6 +63,8 @@ encode_error(char** rbuf, int error);
 
 extern int
 open_udp_socket(int& udp_sock, unsigned short port = 0);
+extern int
+open_udp_socket(int& udp_sock, const SockAddr& sa);
 
 extern ErlDrvPort
 create_port(ErlDrvTermData owner, UtpPort* p);

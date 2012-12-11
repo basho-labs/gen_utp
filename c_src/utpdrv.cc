@@ -63,6 +63,13 @@ utp_check_timeouts(ErlDrvData drv_data)
     drv->check_utp_timeouts();
 }
 
+static void
+utp_outputv(ErlDrvData drv_data, ErlIOVec *ev)
+{
+    Handler* drv = reinterpret_cast<Handler*>(drv_data);
+    drv->outputv(*ev);
+}
+
 static ErlDrvSSizeT
 utp_control(ErlDrvData drv_data, unsigned int command,
             char *buf, ErlDrvSizeT len, char **rbuf, ErlDrvSizeT rlen)
@@ -96,34 +103,19 @@ static ErlDrvEntry drv_entry = {
     utp_init,
     utp_start,
     utp_stop,
-    0,//void (*output)(ErlDrvData drv_data, char *buf, ErlDrvSizeT len);
-                                /* called when we have output from erlang to
-                                   the port */
+    0,
     utp_ready_input,
-                                /* called when we have input from one of
-                                   the driver's handles */
-    0,//void (*ready_output)(ErlDrvData drv_data, ErlDrvEvent event);
-                                /* called when output is possible to one of
-                                   the driver's handles */
+    0,
     UtpDrv::drv_name,
     utp_finish,
     0,
     utp_control,
     utp_check_timeouts,
-    0,//void (*outputv)(ErlDrvData drv_data, ErlIOVec *ev);
-                                /* called when we have output from erlang
-                                   to the port */
-    0,//void (*ready_async)(ErlDrvData drv_data, ErlDrvThreadData thread_data);
-    0,//void (*flush)(ErlDrvData drv_data);
-                                /* called when the port is about to be
-                                   closed, and there is data in the
-                                   driver queue that needs to be flushed
-                                   before 'stop' can be called */
+    utp_outputv,
     0,
-    0,//void (*event)(ErlDrvData drv_data, ErlDrvEvent event,
-      //            ErlDrvEventData event_data);
-                                /* Called when an event selected by
-                                   driver_event() has occurred */
+    0,
+    0,
+    0,
     ERL_DRV_EXTENDED_MARKER,
     ERL_DRV_EXTENDED_MAJOR_VERSION,
     ERL_DRV_EXTENDED_MINOR_VERSION,

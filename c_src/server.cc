@@ -55,8 +55,6 @@ UtpDrv::Server::control(unsigned command, const char* buf, ErlDrvSizeT len,
         return listener.sockname(buf, len, rbuf);
     case UTP_PEERNAME:
         return peername(buf, len, rbuf);
-    case UTP_SEND:
-        return send(buf, len, rbuf);
     case UTP_RECV:
         return encode_error(rbuf, ENOTCONN);
     }

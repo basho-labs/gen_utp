@@ -30,17 +30,16 @@
 using namespace UtpDrv;
 
 UtpDrv::UtpPort::UtpPort(int sock) :
-    port(0), pdl(0), caller(driver_term_nil), utp(0), caller_ref(0),
+    port(0), pdl(0), caller(driver_term_nil), utp(0),
     status(not_connected), udp_sock(sock),
     state(0), error_code(0), writable(false), mon_valid(false)
 {
+    condvar = erl_drv_cond_create(const_cast<char*>("utp_port_cond"));
 }
 
 UtpDrv::UtpPort::~UtpPort()
 {
-    if (caller_ref != 0) {
-        driver_free_binary(caller_ref);
-    }
+    erl_drv_cond_destroy(condvar);
 }
 
 void
@@ -70,7 +69,7 @@ void
 UtpDrv::UtpPort::input_ready()
 {
     UTPDRV_TRACE("UtpPort::input_ready\r\n");
-    byte buf[4096];
+    byte buf[8192];
     SockAddr addr;
     int len = recvfrom(udp_sock, buf, sizeof buf, 0, addr, &addr.slen);
     if (len > 0) {
@@ -79,6 +78,21 @@ UtpDrv::UtpPort::input_ready()
                           &UtpPort::send_to, this,
                           buf, len, addr, addr.slen);
     }
+}
+
+void
+UtpDrv::UtpPort::send_not_connected() const
+{
+    ErlDrvTermData caller = driver_caller(port);
+    ErlDrvTermData term[] = {
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_reply")),
+        ERL_DRV_PORT, driver_mk_port(port),
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
+        ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(ENOTCONN)),
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_TUPLE, 3,
+    };
+    driver_send_term(port, caller, term, sizeof term/sizeof *term);
 }
 
 void
@@ -131,25 +145,34 @@ UtpDrv::UtpPort::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
     return addr.encode(rbuf);
 }
 
-ErlDrvSSizeT
-UtpDrv::UtpPort::send(const char* buf, ErlDrvSizeT len, char** rbuf)
+void
+UtpDrv::UtpPort::outputv(const ErlIOVec& ev)
 {
-    UTPDRV_TRACE("UtpPort::send\r\n");
+    UTPDRV_TRACE("UtpPort::outputv\r\n");
     if (status != connected || utp == 0) {
-        return encode_error(rbuf, ENOTCONN);
+        send_not_connected();
     }
 
-    if (len != 0) {
-        {
-            PdlLocker pdl_lock(pdl);
-            driver_enq(port, const_cast<char*>(buf), len);
-        }
-        {
-            MutexLocker lock(utp_mutex);
-            writable = UTP_Write(utp, len);
-        }
+    {
+        PdlLocker pdl_lock(pdl);
+        driver_enqv(port, const_cast<ErlIOVec*>(&ev), 0);
     }
-    return encode_atom(rbuf, "ok");
+    {
+        MutexLocker lock(utp_mutex);
+        while (!writable) {
+            erl_drv_cond_wait(condvar, utp_mutex);
+        }
+        writable = UTP_Write(utp, ev.size);
+        erl_drv_cond_signal(condvar);
+    }
+    ErlDrvTermData caller = driver_caller(port);
+    ErlDrvTermData term[] = {
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_reply")),
+        ERL_DRV_PORT, driver_mk_port(port),
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
+        ERL_DRV_TUPLE, 3,
+    };
+    driver_send_term(port, caller, term, sizeof term/sizeof *term);
 }
 
 ErlDrvSSizeT
@@ -160,7 +183,6 @@ UtpDrv::UtpPort::close(const char* buf, ErlDrvSizeT len, char** rbuf)
         main_port->del_monitor(port, mon);
         mon_valid = false;
     }
-    long bin_size;
     if (utp != 0) {
         try {
             EiDecoder decoder(buf, len);
@@ -169,13 +191,8 @@ UtpDrv::UtpPort::close(const char* buf, ErlDrvSizeT len, char** rbuf)
             if (type != ERL_BINARY_EXT) {
                 return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
             }
-            caller_ref = driver_alloc_binary(size);
-            decoder.binary(caller_ref->orig_bytes, bin_size);
+            caller_ref.decode(decoder, size);
         } catch (const EiError&) {
-            if (caller_ref != 0) {
-                driver_free_binary(caller_ref);
-                caller_ref = 0;
-            }
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
     }
@@ -263,23 +280,22 @@ UtpDrv::UtpPort::do_state_change(int s)
 
     case UTP_STATE_WRITABLE:
         writable = true;
+        erl_drv_cond_signal(condvar);
         break;
 
     case UTP_STATE_CONNECT:
-        if (status == connect_pending && caller_ref != 0) {
-            ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(
-                caller_ref->orig_bytes);
+        if (status == connect_pending && caller_ref) {
             ErlDrvTermData term[] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
-                ERL_DRV_EXT2TERM, ext, caller_ref->orig_size,
+                ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
                 ERL_DRV_TUPLE, 2,
             };
             MutexLocker lock(drv_mutex);
             driver_output_term(port, term, sizeof term/sizeof *term);
-            driver_free_binary(caller_ref);
-            caller_ref = 0;
         }
         status = connected;
+        writable = true;
+        erl_drv_cond_signal(condvar);
         break;
 
     case UTP_STATE_DESTROYING:
@@ -287,11 +303,9 @@ UtpDrv::UtpPort::do_state_change(int s)
             main_port->deselect(udp_sock);
         }
         if (status == closing) {
-            ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(
-                caller_ref->orig_bytes);
             ErlDrvTermData term[] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
-                ERL_DRV_EXT2TERM, ext, caller_ref->orig_size,
+                ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
                 ERL_DRV_TUPLE, 2,
             };
             if (caller != driver_term_nil) {
@@ -300,8 +314,6 @@ UtpDrv::UtpPort::do_state_change(int s)
                 MutexLocker lock(drv_mutex);
                 driver_output_term(port, term, sizeof term/sizeof *term);
             }
-            driver_free_binary(caller_ref);
-            caller_ref = 0;
             caller = driver_term_nil;
         }
         break;
@@ -316,19 +328,15 @@ UtpDrv::UtpPort::do_error(int errcode)
     switch (status) {
     case connect_pending:
         status = connect_failed;
-        if (caller_ref != 0) {
-            ErlDrvTermData ext = reinterpret_cast<ErlDrvTermData>(
-                caller_ref->orig_bytes);
+        if (caller_ref) {
             ErlDrvTermData term[] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
                 ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(error_code)),
-                ERL_DRV_EXT2TERM, ext, caller_ref->orig_size,
+                ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
                 ERL_DRV_TUPLE, 3,
             };
             MutexLocker lock(drv_mutex);
             driver_output_term(port, term, sizeof term/sizeof *term);
-            driver_free_binary(caller_ref);
-            caller_ref = 0;
         }
         break;
     default:

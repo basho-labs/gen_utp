@@ -1,9 +1,9 @@
-#ifndef UTPDRV_HANDLER_H
-#define UTPDRV_HANDLER_H
+#ifndef UTPDRV_DRV_TYPES_H
+#define UTPDRV_DRV_TYPES_H
 
 // -------------------------------------------------------------------
 //
-// handler.h: abstract base class for driver handlers
+// drv_types.h: wrap Erlang driver types for uTP driver
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -23,45 +23,36 @@
 //
 // -------------------------------------------------------------------
 
-#include <new>
 #include "erl_driver.h"
-#include "libutp/utp.h"
+#include "coder.h"
 
 
 namespace UtpDrv {
 
-// Command values must match those defined in gen_utp.erl
-enum Commands {
-    UTP_LISTEN = 1,
-    UTP_CONNECT_START,
-    UTP_CONNECT_VALIDATE,
-    UTP_RECV,
-    UTP_CLOSE,
-    UTP_SOCKNAME,
-    UTP_PEERNAME
-};
-
-
-class Handler
+class Binary
 {
 public:
-    virtual ~Handler();
+    Binary();
+    Binary(const Binary&);
+    explicit Binary(ErlDrvBinary* b);
+    ~Binary();
 
-    virtual ErlDrvSSizeT
-    control(unsigned command, const char* buf, ErlDrvSizeT len,
-            char** rbuf, ErlDrvSizeT rlen) = 0;
+    Binary& operator=(const Binary&);
 
-    virtual void
-    outputv(const ErlIOVec& ev) = 0;
+    void alloc(size_t size);
+    void reset(ErlDrvBinary* b = 0);
+    void swap(Binary&);
 
-    virtual void stop() = 0;
-    virtual void process_exit(ErlDrvMonitor* monitor) = 0;
+    long decode(EiDecoder& decoder, size_t size);
 
-    void* operator new(size_t s);
-    void operator delete(void* p);
+    const char* data() const;
+    size_t size() const;
 
-protected:
-    Handler() {}
+    operator ErlDrvTermData() const;
+    operator bool() const;
+
+private:
+    ErlDrvBinary* bin;
 };
 
 }

@@ -34,7 +34,7 @@ const UtpDrv::NoMemError UtpDrv::enomem_error;
 
 UtpDrv::SockAddr::SockAddr() : slen(sizeof addr)
 {
-    memset(&addr, 0, sizeof addr);
+    memset(&addr, 0, slen);
 }
 
 UtpDrv::SockAddr::SockAddr(const sockaddr& sa, socklen_t sl) : slen(sl)
@@ -94,6 +94,13 @@ UtpDrv::SockAddr::to_addrport(char* addrstr, size_t addrlen,
     }
 }
 
+int
+UtpDrv::SockAddr::family() const
+{
+    const sockaddr* sa = reinterpret_cast<const sockaddr*>(&addr);
+    return sa->sa_family;
+}
+
 ErlDrvSSizeT
 UtpDrv::SockAddr::encode(char** rbuf) const
 {
@@ -132,6 +139,8 @@ UtpDrv::SockAddr::operator const sockaddr*() const
     return reinterpret_cast<const sockaddr*>(&addr);
 }
 
+//--------------------------------------------------------------------
+
 ErlDrvSSizeT
 UtpDrv::encode_atom(char** rbuf, const char* atom)
 {
@@ -168,10 +177,20 @@ UtpDrv::encode_error(char** rbuf, int error)
     return encode_error(rbuf, erl_errno_id(error));
 }
 
+//--------------------------------------------------------------------
+
 int
 UtpDrv::open_udp_socket(int& udp_sock, unsigned short port)
 {
-    if ((udp_sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+    SockAddr addr("0.0.0.0", port);
+    return open_udp_socket(udp_sock, addr);
+}
+
+int
+UtpDrv::open_udp_socket(int& udp_sock, const SockAddr& addr)
+{
+    int family = addr.family();
+    if ((udp_sock = socket(family, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
         return errno;
     }
     int flags = fcntl(udp_sock, F_GETFL);
@@ -179,7 +198,6 @@ UtpDrv::open_udp_socket(int& udp_sock, unsigned short port)
         ::close(udp_sock);
         return errno;
     }
-    SockAddr addr("0.0.0.0", port);
     if (bind(udp_sock, addr, addr.slen) < 0) {
         ::close(udp_sock);
         return errno;
@@ -195,6 +213,8 @@ UtpDrv::create_port(ErlDrvTermData owner, UtpPort* p)
                                              drv_name, port_drv_data);
     return new_port;
 }
+
+//--------------------------------------------------------------------
 
 UtpDrv::NoMemError::NoMemError() : bin(0)
 {

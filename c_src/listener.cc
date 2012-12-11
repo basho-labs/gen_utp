@@ -53,11 +53,16 @@ UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
         return UtpPort::sockname(buf, len, rbuf);
     case UTP_PEERNAME:
         return peername(buf, len, rbuf);
-    case UTP_SEND:
     case UTP_RECV:
         return encode_error(rbuf, ENOTCONN);
     }
     return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
+}
+
+void
+UtpDrv::Listener::outputv(const ErlIOVec&)
+{
+    send_not_connected();
 }
 
 void
@@ -165,13 +170,6 @@ ErlDrvSSizeT
 UtpDrv::Listener::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
 {
     UTPDRV_TRACE("Listener::peername\r\n");
-    return encode_error(rbuf, ENOTCONN);
-}
-
-ErlDrvSSizeT
-UtpDrv::Listener::send(const char* buf, ErlDrvSizeT len, char** rbuf)
-{
-    UTPDRV_TRACE("Listener::send\r\n");
     return encode_error(rbuf, ENOTCONN);
 }
 

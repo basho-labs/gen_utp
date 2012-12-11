@@ -8,12 +8,15 @@ VSN=d4685a
 
 case "$1" in
     clean)
+        make clean
         rm -rf libutp
         ;;
 
     *)
-        test -f libutp/libutp.a && exit 0
-        tar -xzf libutp-${VSN}.tar.gz
-        ( cd libutp && make CXXFLAGS+="$DRV_CFLAGS" )
+        if [ ! -f libutp/libutp.a ]; then
+            tar -xzf libutp-${VSN}.tar.gz
+            ( cd libutp && make CXXFLAGS+="$DRV_CFLAGS" )
+        fi
+        make all
         ;;
 esac

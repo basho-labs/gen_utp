@@ -24,6 +24,8 @@
 // -------------------------------------------------------------------
 
 #include "handler.h"
+#include "utils.h"
+#include "drv_types.h"
 
 
 namespace UtpDrv {
@@ -34,6 +36,8 @@ public:
     ~UtpPort();
 
     void process_exit(ErlDrvMonitor* monitor);
+
+    void outputv(const ErlIOVec& ev);
 
     virtual bool
     set_port(ErlDrvPort p);
@@ -51,9 +55,6 @@ protected:
 
     virtual ErlDrvSSizeT
     peername(const char* buf, ErlDrvSizeT len, char** rbuf);
-
-    virtual ErlDrvSSizeT
-    send(const char* buf, ErlDrvSizeT len, char** rbuf);
 
     virtual ErlDrvSSizeT
     close(const char* buf, ErlDrvSizeT len, char** rbuf);
@@ -87,20 +88,19 @@ protected:
         closing
     };
 
+    void send_not_connected() const;
     void demonitor();
 
+    Binary caller_ref;
     ErlDrvPort port;
     ErlDrvMonitor mon;
     ErlDrvPDL pdl;
     ErlDrvTermData caller;
     UTPSocket* utp;
-    ErlDrvBinary* caller_ref;
+    ErlDrvCond* condvar;
     PortStatus status;
     int udp_sock, state, error_code;
     bool writable, mon_valid;
-
-private:
-
 };
 
 }
