@@ -28,9 +28,12 @@
 
 using namespace UtpDrv;
 
-UtpDrv::Client::Client(int sock) : UtpPort(sock)
+UtpDrv::Client::Client(int sock, const Binary& ref,
+                       DataDelivery del, long send_timeout) :
+    UtpPort(sock, del, send_timeout)
 {
     UTPDRV_TRACE("Client::Client\r\n");
+    caller_ref = ref;
 }
 
 UtpDrv::Client::~Client()
@@ -52,6 +55,10 @@ UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
         return peername(buf, len, rbuf);
     case UTP_CLOSE:
         return close(buf, len, rbuf);
+    case UTP_SETOPTS:
+        return setopts(buf, len, rbuf);
+    case UTP_CANCEL_SEND:
+        return cancel_send();
     default:
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
     }
@@ -71,7 +78,6 @@ UtpDrv::Client::connect_to(const SockAddr& addr)
 {
     UTPDRV_TRACE("Client::connect_to\r\n");
     status = connect_pending;
-    caller_ref.reset();
     MutexLocker lock(utp_mutex);
     utp = UTP_Create(&Client::send_to, this, addr, addr.slen);
     set_utp_callbacks(utp);

@@ -34,7 +34,7 @@ class Listener;
 class Server : public UtpPort
 {
 public:
-    Server(Listener& lr, UTPSocket* utp);
+    Server(Listener& lr, UTPSocket* utp, DataDelivery del, long send_timeout);
     ~Server();
 
     ErlDrvSSizeT

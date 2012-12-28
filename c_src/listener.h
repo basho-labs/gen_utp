@@ -38,14 +38,14 @@ class Listener : public UtpPort
     friend class Server;
 
 public:
-    explicit Listener(int sock);
+    Listener(int sock, DataDelivery del, long send_timeout);
     ~Listener();
 
     ErlDrvSSizeT
     control(unsigned command, const char* buf, ErlDrvSizeT len,
             char** rbuf, ErlDrvSizeT rlen);
 
-    void outputv(const ErlIOVec& ev);
+    void outputv(ErlIOVec& ev);
 
     void stop();
 

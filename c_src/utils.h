@@ -43,7 +43,11 @@ struct SockAddr {
     SockAddr();
     SockAddr(const sockaddr& sa, socklen_t sl);
     SockAddr(const char* addrstr, unsigned short port);
+    SockAddr(in_addr_t inaddr, unsigned short port);
+    SockAddr(const in6_addr& inaddr6, unsigned short port);
     void from_addrport(const char* addrstr, unsigned short port);
+    void from_addrport(in_addr_t inaddr, unsigned short port);
+    void from_addrport(const in6_addr& inaddr6, unsigned short port);
     void to_addrport(char* addrstr, size_t alen, unsigned short& port) const;
     int family() const;
     ErlDrvSSizeT encode(char** rbuf) const;

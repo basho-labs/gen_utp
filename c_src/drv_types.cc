@@ -57,7 +57,7 @@ UtpDrv::Binary::operator=(const Binary& b)
         }
         if (b.bin != 0) {
             bin = driver_alloc_binary(b.bin->orig_size);
-            memcpy(bin->orig_bytes, b.bin->orig_bytes, bin->orig_size);
+            memcpy(bin->orig_bytes, b.bin->orig_bytes, b.bin->orig_size);
         } else {
             bin = 0;
         }

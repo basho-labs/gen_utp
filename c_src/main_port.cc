@@ -20,6 +20,7 @@
 //
 // -------------------------------------------------------------------
 
+#include <sys/time.h>
 #include "main_port.h"
 #include "globals.h"
 #include "locker.h"
@@ -127,7 +128,7 @@ UtpDrv::MainPort::ready_input(long fd)
 }
 
 void
-UtpDrv::MainPort::outputv(const ErlIOVec&)
+UtpDrv::MainPort::outputv(ErlIOVec&)
 {
     UTPDRV_TRACE("MainPort::outputv\r\n");
 }
@@ -181,7 +182,7 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACE("MainPort::connect_start\r\n");
     int arity, type, size;
-    Binary from;
+    Binary ref, binopts;
     long bin_size;
     char addrstr[INET6_ADDRSTRLEN];
     unsigned long addrport;
@@ -193,16 +194,20 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
         }
         decoder.string(addrstr);
         decoder.ulong(addrport);
-        // TODO: skip connect options for now...
-        decoder.skip();
         decoder.type(type, size);
         if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        bin_size = from.decode(decoder, size);
+        binopts.decode(decoder, size);
+        decoder.type(type, size);
+        if (type != ERL_BINARY_EXT) {
+            return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+        }
+        bin_size = ref.decode(decoder, size);
     } catch (const EiError&) {
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
+    ErlDrvTermData caller = driver_caller(port);
 
     SockAddr addr;
     try {
@@ -211,35 +216,60 @@ UtpDrv::MainPort::connect_start(const char* buf, ErlDrvSizeT len,
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
 
-    int udp_sock;
-    int err = open_udp_socket(udp_sock);
+    SockOpts opts;
+    decode_sock_opts(binopts, opts);
+    int udp_sock, err;
+    if (opts.fd != -1) {
+        udp_sock = opts.fd;
+        SockAddr fdaddr;
+        if (getsockname(udp_sock, fdaddr, &fdaddr.slen) < 0) {
+            err = errno;
+        } else {
+            err = 0;
+        }
+    } else if (opts.addr_set) {
+        err = open_udp_socket(udp_sock, opts.addr);
+    } else if (opts.inet6) {
+        SockAddr in6_any("::", 0);
+        err = open_udp_socket(udp_sock, in6_any);
+    } else {
+        err = open_udp_socket(udp_sock, opts.port);
+    }
     if (err != 0) {
-        return encode_error(rbuf, err);
-    }
-    Client* client = new Client(udp_sock);
-    ErlDrvTermData caller = driver_caller(port);
-    ErlDrvPort new_port = create_port(caller, client);
-    if (!client->set_port(new_port)) {
-        driver_failure_atom(new_port,
-                            const_cast<char*>("port_data_lock_failed"));
-        return encode_error(rbuf, "noproc");
-    }
-    {
-        FdMap::value_type val(udp_sock, client);
-        MutexLocker lock(map_mutex);
-        fdmap.insert(val);
-    }
-    ErlDrvEvent ev = reinterpret_cast<ErlDrvEvent>(udp_sock);
-    driver_select(port, ev, ERL_DRV_READ|ERL_DRV_USE, 1);
-    client->connect_to(addr);
-    {
         ErlDrvTermData term[] = {
-            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
-            ERL_DRV_PORT, driver_mk_port(new_port),
-            ERL_DRV_EXT2TERM, from, bin_size,
-            ERL_DRV_TUPLE, 3,
+            ERL_DRV_EXT2TERM, ref, ref.size(),
+            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
+            ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
+            ERL_DRV_TUPLE, 2,
+            ERL_DRV_TUPLE, 2,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
+    } else {
+        Client* client = new Client(udp_sock,ref,opts.delivery,opts.send_tmout);
+        ErlDrvPort new_port = create_port(caller, client);
+        if (!client->set_port(new_port)) {
+            driver_failure_atom(new_port,
+                                const_cast<char*>("port_data_lock_failed"));
+            return encode_error(rbuf, "noproc");
+        }
+        {
+            FdMap::value_type val(udp_sock, client);
+            MutexLocker lock(map_mutex);
+            fdmap.insert(val);
+        }
+        ErlDrvEvent ev = reinterpret_cast<ErlDrvEvent>(udp_sock);
+        driver_select(port, ev, ERL_DRV_READ|ERL_DRV_USE, 1);
+        client->connect_to(addr);
+        {
+            ErlDrvTermData term[] = {
+                ERL_DRV_EXT2TERM, ref, bin_size,
+                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
+                ERL_DRV_PORT, driver_mk_port(new_port),
+                ERL_DRV_TUPLE, 2,
+                ERL_DRV_TUPLE, 2,
+            };
+            driver_send_term(port, caller, term, sizeof term/sizeof *term);
+        }
     }
     return 0;
 }
@@ -272,8 +302,8 @@ UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
     }
     ErlDrvTermData caller = driver_caller(port);
 
-    ListenOpts opts;
-    decode_listen_opts(binopts, opts);
+    SockOpts opts;
+    decode_sock_opts(binopts, opts);
     int udp_sock, err;
     if (opts.fd != -1) {
         udp_sock = opts.fd;
@@ -301,7 +331,8 @@ UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
     } else {
-        Listener* listener = new Listener(udp_sock);
+        Listener* listener = new Listener(udp_sock, opts.delivery,
+                                          opts.send_tmout);
         ErlDrvEvent ev = reinterpret_cast<ErlDrvEvent>(udp_sock);
         driver_select(port, ev, ERL_DRV_READ|ERL_DRV_USE, 1);
         ErlDrvPort new_port = create_port(caller, listener);
@@ -326,7 +357,7 @@ UtpDrv::MainPort::listen(const char* buf, ErlDrvSizeT len,
 }
 
 void
-UtpDrv::MainPort::decode_listen_opts(const Binary& bin, ListenOpts& opts)
+UtpDrv::MainPort::decode_sock_opts(const Binary& bin, SockOpts& opts)
 {
     const char* data = bin.data();
     const char* end = data + bin.size();
@@ -346,30 +377,30 @@ UtpDrv::MainPort::decode_listen_opts(const Binary& bin, ListenOpts& opts)
             data += 2;
             break;
         case UTP_LIST:
-            opts.binary = false;
+            opts.delivery = UtpPort::DATA_LIST;
             break;
         case UTP_BINARY:
-            opts.binary = true;
+            opts.delivery = UtpPort::DATA_BINARY;
             break;
         case UTP_INET:
             opts.inet6 = false;
-            if (!opts.addr_set) {
-                strcpy(opts.addrstr, "0.0.0.0");
-            }
             break;
         case UTP_INET6:
             opts.inet6 = true;
-            if (!opts.addr_set) {
-                strcpy(opts.addrstr, "::");
-            }
+            break;
+        case UTP_SEND_TMOUT:
+            opts.send_tmout = ntohl(*reinterpret_cast<const uint32_t*>(data));
+            data += 4;
             break;
         }
     }
-    opts.addr.from_addrport(opts.addrstr, opts.port);
+    if (opts.addr_set) {
+        opts.addr.from_addrport(opts.addrstr, opts.port);
+    }
 }
 
-UtpDrv::MainPort::ListenOpts::ListenOpts() :
-    fd(-1), binary(true), inet6(false), addr_set(false)
+UtpDrv::MainPort::SockOpts::SockOpts() :
+    send_tmout(-1), fd(-1), port(0), delivery(UtpPort::DATA_BINARY),
+    inet6(false), addr_set(false)
 {
-    strcpy(addrstr, "0.0.0.0");
 }

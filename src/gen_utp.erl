@@ -23,6 +23,8 @@
 -behaviour(gen_server).
 -author('Steve Vinoski <vinoski@ieee.org>').
 
+-include("gen_utp_opts.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -31,7 +33,8 @@
          listen/1, listen/2,
          connect/2, connect/3,
          close/1, send/2,
-         sockname/1, peername/1]).
+         sockname/1, peername/1,
+         setopts/2, controlling_process/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -43,12 +46,13 @@
 -define(UTP_LISTEN, 1).
 -define(UTP_CONNECT_START, 2).
 -define(UTP_CONNECT_VALIDATE, 3).
--define(UTP_RECV, 4).
--define(UTP_CLOSE, 5).
--define(UTP_SOCKNAME, 6).
--define(UTP_PEERNAME, 7).
+-define(UTP_CLOSE, 4).
+-define(UTP_SOCKNAME, 5).
+-define(UTP_PEERNAME, 6).
+-define(UTP_SETOPTS, 7).
+-define(UTP_CANCEL_SEND, 8).
 
-%% IDs for listen options
+%% IDs for binary-encoded options
 -define(UTP_IP, 1).
 -define(UTP_FD, 2).
 -define(UTP_PORT, 3).
@@ -56,18 +60,13 @@
 -define(UTP_BINARY, 5).
 -define(UTP_INET, 6).
 -define(UTP_INET6, 7).
+-define(UTP_SEND_TMOUT, 8).
 
 -type utpstate() :: #state{}.
 -type from() :: {pid(), any()}.
 -type utpaddr() :: inet:ip_address() | inet:hostname().
 -type utpport() :: inet:port_number().
 -type utpsock() :: port().
--type utplsnopt() :: {ip,utpaddr()} | {ifaddr,utpaddr()} |
-                     {fd,non_neg_integer()} | {port, utpport()} |
-                     list | binary | inet | inet6.
--type utplsnopts() :: [utplsnopt()].
-%%-type utpconnopt() ::
--type utpconnopts() :: [any()].
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
@@ -85,12 +84,20 @@ stop() ->
 listen(Port) when Port >= 0, Port < 65536 ->
     listen(Port, []).
 
--spec listen(utpport(), utplsnopts()) -> {ok, utpsock()} | {error, any()}.
+-spec listen(utpport(), gen_utp_opts:utpopts()) -> {ok, utpsock()} |
+                                                   {error, any()}.
 listen(Port, Options) when Port >= 0, Port < 65536 ->
-    OptBin = options_to_binary(listen, [{port,Port}|Options]),
-    Ref = make_ref(),
-    Args = term_to_binary({OptBin, term_to_binary(Ref)}),
+    ValidOpts = gen_utp_opts:validate([{port,Port}|Options]),
+    case ValidOpts#utp_options.send_tmout of
+        undefined ->
+            ok;
+        _ ->
+            erlang:error(badarg)
+    end,
+    OptBin = options_to_binary(ValidOpts),
     try
+        Ref = make_ref(),
+        Args = term_to_binary({OptBin, term_to_binary(Ref)}),
         erlang:port_control(utpdrv, ?UTP_LISTEN, Args),
         receive
             {Ref, Result} ->
@@ -105,8 +112,8 @@ listen(Port, Options) when Port >= 0, Port < 65536 ->
 connect(Addr, Port) when Port > 0, Port =< 65535 ->
     connect(Addr, Port, []).
 
--spec connect(utpaddr(), utpport(), utpconnopts()) -> {ok, utpsock()} |
-                                                      {error, any()}.
+-spec connect(utpaddr(), utpport(), gen_utp_opts:utpopts()) -> {ok, utpsock()} |
+                                                               {error, any()}.
 connect(Addr, Port, Opts) when is_tuple(Addr), Port > 0, Port =< 65535 ->
     try inet_parse:ntoa(Addr) of
         ListAddr ->
@@ -131,16 +138,18 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
         {error, _}=Err ->
             Err;
         _ ->
-            Ref = make_ref(),
-            From = {self(), Ref},
-            Args = term_to_binary({AddrStr, Port, Opts, term_to_binary(From)}),
             try
+                ValidOpts = gen_utp_opts:validate(Opts),
+                OptBin = options_to_binary(ValidOpts),
+                Ref = make_ref(),
+                RefBin = term_to_binary(Ref),
+                Args = term_to_binary({AddrStr, Port, OptBin, RefBin}),
                 erlang:port_control(utpdrv, ?UTP_CONNECT_START, Args),
                 receive
-                    {ok, Sock, From} ->
+                    {Ref, {ok, Sock}} ->
                         validate_connect(Sock);
-                    {error, Fail, From} ->
-                        {error, Fail}
+                    {Ref, Result} ->
+                        Result
                 end
             catch
                 _:Reason ->
@@ -150,32 +159,26 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
 
 -spec close(utpsock()) -> ok.
 close(Sock) ->
-    Ref = make_ref(),
-    Args = term_to_binary(term_to_binary(Ref)),
-    Result = erlang:port_control(Sock, ?UTP_CLOSE, Args),
-    case binary_to_term(Result) of
-        wait ->
-            receive
-                {ok, Ref} -> ok
-            end;
-        ok ->
-            ok
+    try
+        Ref = make_ref(),
+        Args = term_to_binary(term_to_binary(Ref)),
+        Result = erlang:port_control(Sock, ?UTP_CLOSE, Args),
+        case binary_to_term(Result) of
+            wait ->
+                receive
+                    {Ref, ok} -> ok
+                end;
+            ok ->
+                ok
+        end
+    after
+        true = erlang:port_close(Sock)
     end,
-    true = erlang:port_close(Sock),
     ok.
 
 -spec send(utpsock(), iodata()) -> ok | {error, any()}.
 send(Sock, Data) ->
-    try
-        true = erlang:port_command(Sock, Data),
-        receive
-            {utp_reply, Sock, Result} ->
-                Result
-        end
-    catch
-        _:Reason ->
-            {error, Reason}
-    end.
+    send(Sock, Data, os:timestamp()).
 
 -spec sockname(utpsock()) -> {ok, {utpaddr(), utpport()}} | {error, any()}.
 sockname(Sock) ->
@@ -199,10 +202,45 @@ peername(Sock) ->
             Error
     end.
 
+-spec setopts(utpsock(), gen_utp_opts:utpopts()) -> ok | {error, any()}.
+setopts(Sock, Opts) when is_list(Opts) ->
+    ValidOpts = gen_utp_opts:validate(Opts),
+    OptCheck = fun(Opt) -> Opt =/= undefined end,
+    case lists:any(OptCheck, [ValidOpts#utp_options.ip,
+                              ValidOpts#utp_options.port,
+                              ValidOpts#utp_options.fd,
+                              ValidOpts#utp_options.family]) of
+        true ->
+            erlang:error(badarg, Opts);
+        false ->
+            OptBin = options_to_binary(ValidOpts),
+            Result = erlang:port_control(Sock, ?UTP_SETOPTS, OptBin),
+            binary_to_term(Result)
+    end.
 
--spec init([]) -> ignore |
-                  {ok, utpstate()} |
-                  {stop, any()}.
+-spec controlling_process(utpsock(), pid()) -> ok | {error, any()}.
+controlling_process(Sock, NewOwner) ->
+    case erlang:port_info(Sock, connected) of
+        {connected, NewOwner} ->
+            ok;
+        {connected, Pid} when Pid =/= self() ->
+            {error, not_owner};
+        undefined ->
+            {error, einval};
+        _ ->
+            try erlang:port_connect(Sock, NewOwner) of
+                true ->
+                    unlink(Sock),
+                    ok
+            catch
+                error:Reason ->
+                    {error, Reason}
+            end
+    end.
+
+%% gen_server functions
+
+-spec init([]) -> ignore | {ok, utpstate()} | {stop, any()}.
 init([]) ->
     process_flag(trap_exit, true),
     Shlib = "utpdrv",
@@ -219,10 +257,10 @@ init([]) ->
                      {error, already_loaded} -> ok;
                      {error, LoadError} ->
                          LoadErrorStr = erl_ddll:format_error(LoadError),
-                         ErrStr = lists:flatten(
-                                    io_lib:format("could not load driver ~s: ~p",
-                                                  [Shlib, LoadErrorStr])),
-                         {stop, ErrStr}
+                         EStr = lists:flatten(
+                                  io_lib:format("could not load driver ~s: ~p",
+                                                [Shlib, LoadErrorStr])),
+                         {stop, EStr}
                  end,
     case LoadResult of
         ok ->
@@ -245,6 +283,10 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(any(), utpstate()) -> {noreply, utpstate()}.
+handle_info({timer, {TS1, TUS1}, {TS2, TUS2}}, State) ->
+    Time = (((TS2*1000000)+TUS2)-((TS1*1000000)+TUS1))/1000000,
+    io:format("10000 cycles of the driver timer: ~w~n", [Time]),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -258,6 +300,71 @@ terminate(_Reason, #state{port=Port}) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+%% Internal functions
+
+%%
+%% The send/3 function takes the socket and data to be sent, as well as a
+%% timestamp of when the operation was started. The send timeout is set
+%% when the socket is created and is stored in the driver. This function
+%% uses the starting timestamp to help enforce any send timeout.
+%%
+%% If the socket is writable, the driver takes the data and makes sure it
+%% gets sent. If it's not writable, the driver sends a message telling the
+%% sender to wait. If a send timeout is set on the socket, it includes that
+%% timeout in the message. The process then awaits a message from the
+%% driver telling it to retry. If a timeout occurs before the retry message
+%% arrives, an error is returned to the caller. When a retry arrives, check
+%% the start timestamp to ensure a timeout hasn't occurred, and if not try
+%% the send operation again.
+%%
+-spec send(utpsock(), iodata(), erlang:timestamp()) -> ok | {error, any()}.
+send(Sock, Data, Start) ->
+    try
+        true = erlang:port_command(Sock, Data),
+        receive
+            {utp_reply, Sock, wait} ->
+                receive
+                    {utp_reply, Sock, retry} ->
+                        send(Sock, Data, Start)
+                end;
+            {utp_reply, Sock, {wait, Timeout}} ->
+                Current = os:timestamp(),
+                TDiff = timer:now_diff(Current, Start) div 1000,
+                case TDiff >= Timeout of
+                    true ->
+                        {error, etimedout};
+                    false ->
+                        {StartMega, StartSec, StartMicro} = Start,
+                        Done = {StartMega, StartSec, Timeout*1000+StartMicro},
+                        Wait = timer:now_diff(Done, Current) div 1000,
+                        receive
+                            {utp_reply, Sock, retry} ->
+                                send(Sock, Data, Start)
+                        after
+                            Wait ->
+                                erlang:port_control(Sock,?UTP_CANCEL_SEND,<<>>),
+                                %% if the reply came back right at the tail
+                                %% end of the receive, return it
+                                receive
+                                    {utp_reply, Sock, ok} ->
+                                        ok;
+                                    {utp_reply, Sock, _} ->
+                                        {error, etimedout}
+                                after
+                                    0 ->
+                                        {error, etimedout}
+                                end
+                        end
+                end;
+            {utp_reply, Sock, Result} ->
+                Result
+        end
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
+
 -spec validate_connect(utpsock()) -> {ok, utpsock()} | {error, any()}.
 validate_connect(Sock) ->
     Ref = make_ref(),
@@ -268,108 +375,66 @@ validate_connect(Sock) ->
             {ok, Sock};
         wait ->
             receive
-                {ok, Ref} ->
+                {Ref, ok} ->
                     {ok, Sock};
-                {error, Reason, Ref} ->
+                {Ref, Err} ->
                     erlang:port_close(Sock),
-                    {error, Reason}
+                    Err
             end;
         Error ->
             erlang:port_close(Sock),
             Error
     end.
 
--record(listen_opts, {
-          delivery,
-          ip,
-          port,
-          fd,
-          family
-         }).
--spec options_to_binary(listen, utplsnopts()) -> binary().
-options_to_binary(listen, Opts) ->
-    options_to_binary(listen, Opts, #listen_opts{}).
--spec options_to_binary(listen, utplsnopts(), #listen_opts{}) -> binary().
-options_to_binary(listen, [], ListenOpts) ->
-    OptBin0 = case ListenOpts#listen_opts.delivery of
-                  undefined ->
-                      <<?UTP_BINARY:8>>;
-                  binary ->
-                      <<?UTP_BINARY:8>>;
-                  list ->
-                      <<?UTP_LIST:8>>
-              end,
-    OptBin1 = case ListenOpts#listen_opts.family of
-                  undefined ->
-                      <<OptBin0/binary, ?UTP_INET:8>>;
-                  inet ->
-                      <<OptBin0/binary, ?UTP_INET:8>>;
-                  inet6 ->
-                      <<OptBin0/binary, ?UTP_INET6:8>>
-              end,
-    OptBin2 = case ListenOpts#listen_opts.ip of
-                  undefined ->
-                      OptBin1;
-                  AddrStr ->
-                      list_to_binary([OptBin1, ?UTP_IP, AddrStr, 0])
-              end,
-    Port = ListenOpts#listen_opts.port,
-    OptBin3 = <<OptBin2/binary, ?UTP_PORT:8, Port:16/big>>,
-    case ListenOpts#listen_opts.fd of
-        undefined ->
-            OptBin3;
-        Fd ->
-            <<OptBin3/binary, ?UTP_FD:8, Fd:32/big>>
-    end;
-options_to_binary(listen, [{ip,IpAddr}|Opts], ListenOpts) ->
-    NewOpts = ipaddr_to_opts(IpAddr, ListenOpts),
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [{ifaddr,IpAddr}|Opts], ListenOpts) ->
-    NewOpts = ipaddr_to_opts(IpAddr, ListenOpts),
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [{fd,Fd}|Opts], ListenOpts) when is_integer(Fd) ->
-    NewOpts = ListenOpts#listen_opts{fd=Fd},
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [{port,Port}|Opts], ListenOpts)
-  when is_integer(Port), Port >= 0, Port < 65536 ->
-    NewOpts = ListenOpts#listen_opts{port=Port},
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [list|Opts], ListenOpts) ->
-    NewOpts = ListenOpts#listen_opts{delivery=list},
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [binary|Opts], ListenOpts) ->
-    NewOpts = ListenOpts#listen_opts{delivery=binary},
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [inet|Opts], ListenOpts) ->
-    NewOpts = ListenOpts#listen_opts{family=inet},
-    options_to_binary(listen, Opts, NewOpts);
-options_to_binary(listen, [inet6|Opts], ListenOpts) ->
-    NewOpts = ListenOpts#listen_opts{family=inet6},
-    options_to_binary(listen, Opts, NewOpts).
+-spec options_to_binary(#utp_options{}) -> binary().
+options_to_binary(UtpOpts) ->
+    list_to_binary([
+                    case UtpOpts#utp_options.delivery of
+                        binary ->
+                            <<?UTP_BINARY:8>>;
+                        list ->
+                            <<?UTP_LIST:8>>;
+                        undefined ->
+                            <<>>
+                    end,
+                    case UtpOpts#utp_options.family of
+                        inet ->
+                            <<?UTP_INET:8>>;
+                        inet6 ->
+                            <<?UTP_INET6:8>>;
+                        undefined ->
+                            <<>>
+                    end,
+                    case UtpOpts#utp_options.ip of
+                        undefined ->
+                            <<>>;
+                        AddrStr ->
+                            [?UTP_IP, AddrStr, 0]
+                    end,
+                    case UtpOpts#utp_options.port of
+                        undefined ->
+                            <<>>;
+                        Port ->
+                            <<?UTP_PORT:8, Port:16/big>>
+                    end,
+                    case UtpOpts#utp_options.fd of
+                        undefined ->
+                            <<>>;
+                        Fd ->
+                            <<?UTP_FD:8, Fd:32/big>>
+                    end,
+                    case UtpOpts#utp_options.send_tmout of
+                        infinity ->
+                            <<>>;
+                        undefined ->
+                            <<>>;
+                        Tm ->
+                            <<?UTP_SEND_TMOUT:8, Tm:32/big>>
+                    end
+                   ]).
 
--spec ipaddr_to_opts(utpaddr(), #listen_opts{}) -> #listen_opts{}.
-ipaddr_to_opts(Addr, ListenOpts) when is_tuple(Addr) ->
-    try inet_parse:ntoa(Addr) of
-        ListAddr ->
-            ipaddr_to_opts(ListAddr, ListenOpts)
-    catch
-        _:_ ->
-            throw(badarg)
-    end;
-ipaddr_to_opts(Addr, ListenOpts) when is_list(Addr) ->
-    case inet:getaddr(Addr, inet) of
-        {ok, AddrTuple} ->
-            ListenOpts#listen_opts{family=inet, ip=inet_parse:ntoa(AddrTuple)};
-        _ ->
-            case inet:getaddr(Addr, inet6) of
-                {ok, AddrTuple} ->
-                    ListenOpts#listen_opts{family=inet6,
-                                           ip=inet_parse:ntoa(AddrTuple)};
-                _Error ->
-                    throw(badarg)
-            end
-    end.
 
+%% Tests functions
 
 -ifdef(TEST).
 
@@ -465,9 +530,9 @@ client_timeout_test_() ->
                 ?_test(
                    begin
                        {ok, LSock} = gen_utp:listen(0),
-                       {ok, {Addr, Port}} = gen_utp:sockname(LSock),
+                       {ok, {_, Port}} = gen_utp:sockname(LSock),
                        ok = gen_utp:close(LSock),
-                       {error, etimedout} = gen_utp:connect(Addr, Port)
+                       {error, etimedout} = gen_utp:connect("localhost", Port)
                    end)}
               ]}
      end}.
@@ -488,7 +553,7 @@ client_test_() ->
                                   end),
                        ok = simple_connect_client(Ref)
                    end)},
-               {"uTP simple send test",
+               {"uTP simple send binary test",
                 ?_test(
                    begin
                        Self = self(),
@@ -496,7 +561,17 @@ client_test_() ->
                        spawn_link(fun() ->
                                           ok = simple_send_server(Self, Ref)
                                   end),
-                       ok = simple_send_client(Ref)
+                       ok = simple_send_client(Ref, binary)
+                   end)},
+               {"uTP simple send list test",
+                ?_test(
+                   begin
+                       Self = self(),
+                       Ref = make_ref(),
+                       spawn_link(fun() ->
+                                          ok = simple_send_server(Self, Ref)
+                                  end),
+                       ok = simple_send_client(Ref, list)
                    end)},
                {"uTP two clients test",
                 ?_test(
@@ -507,6 +582,17 @@ client_test_() ->
                                           ok = two_client_server(Self, Ref)
                                   end),
                        ok = two_clients(Ref)
+                   end)},
+               {"uTP client large send",
+                ?_test(
+                   begin
+                       Self = self(),
+                       Ref = make_ref(),
+                       Bin = list_to_binary(lists:duplicate(1000000, $A)),
+                       spawn_link(fun() ->
+                                          ok = large_send_server(Self, Ref, Bin)
+                                  end),
+                       ok = large_send_client(Ref, Bin)
                    end)}
               ]}
      end}.
@@ -517,7 +603,7 @@ simple_connect_server(Self, Ref) ->
     receive
         {utp_async, Sock, {Addr, Port}} ->
             true = is_port(Sock),
-            true = is_list(Addr),
+            true = is_tuple(Addr),
             true = is_number(Port),
             ok = gen_utp:close(Sock)
     after
@@ -566,13 +652,19 @@ simple_send_server(Self, Ref) ->
     Self ! {done, Ref},
     ok.
 
-simple_send_client(Ref) ->
+simple_send_client(Ref, Mode) ->
     receive
         {ok, {_, LPort}} ->
-            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, [Mode]),
             ok = gen_utp:send(Sock, <<"simple send client">>),
             receive
-                {utp, Sock, <<"simple send server">>} ->
+                {utp, Sock, Reply} ->
+                    case Mode of
+                        binary ->
+                            ?assertMatch(Reply, <<"simple send server">>);
+                        list ->
+                            ?assertMatch(Reply, "simple send server")
+                    end,
                     receive
                         {done, Ref} -> ok
                     after
@@ -651,5 +743,56 @@ two_clients(Ref) ->
     end,
     ok.
 
+large_send_server(Self, Ref, Bin) ->
+    {ok, LSock} = gen_utp:listen(0),
+    Self ! gen_utp:sockname(LSock),
+    receive
+        {utp_async, Sock, {_Addr, _Port}} ->
+            Bin = large_receive(Sock, byte_size(Bin)),
+            ok = gen_utp:send(Sock, <<"large send server">>),
+            ok = gen_utp:close(Sock)
+    after
+        5000 -> exit(failure)
+    end,
+    ok = gen_utp:close(LSock),
+    Self ! {done, Ref},
+    ok.
+
+large_receive(Sock, Size) ->
+    large_receive(Sock, Size, 0, <<>>).
+large_receive(_, Size, Size, Bin) ->
+    Bin;
+large_receive(Sock, Size, Count, Bin) ->
+    receive
+        {utp, Sock, Data} ->
+            NBin = <<Bin/binary, Data/binary>>,
+            large_receive(Sock, Size, Count+byte_size(Data), NBin);
+        Error ->
+            exit(Error)
+    after
+        5000 -> exit(failure)
+    end.
+
+large_send_client(Ref, Bin) ->
+    receive
+        {ok, {_, LPort}} ->
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
+            ok = gen_utp:send(Sock, Bin),
+            receive
+                {utp, Sock, Reply} ->
+                    ?assertMatch(Reply, <<"large send server">>),
+                    receive
+                        {done, Ref} -> ok
+                    after
+                        5000 -> exit(failure)
+                    end
+            after
+                5000 -> exit(failure)
+            end,
+            ok = gen_utp:close(Sock)
+    after
+        5000 -> exit(failure)
+    end,
+    ok.
 
 -endif.

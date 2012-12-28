@@ -26,12 +26,11 @@
 #include <map>
 #include "handler.h"
 #include "utils.h"
+#include "utp_port.h"
 #include "drv_types.h"
 
 
 namespace UtpDrv {
-
-class UtpPort;
 
 class MainPort : public Handler
 {
@@ -51,7 +50,7 @@ public:
     void start();
     void stop();
     void ready_input(long fd);
-    void outputv(const ErlIOVec& ev);
+    void outputv(ErlIOVec& ev);
     void process_exit(ErlDrvMonitor* monitor);
 
     ErlDrvPort drv_port() const;
@@ -79,20 +78,22 @@ private:
         UTP_LIST,
         UTP_BINARY,
         UTP_INET,
-        UTP_INET6
+        UTP_INET6,
+        UTP_SEND_TMOUT
     };
 
-    struct ListenOpts {
-        ListenOpts();
+    struct SockOpts {
+        SockOpts();
         SockAddr addr;
         char addrstr[INET6_ADDRSTRLEN];
+        long send_tmout;
         int fd;
         unsigned short port;
-        bool binary;
+        UtpPort::DataDelivery delivery;
         bool inet6;
         bool addr_set;
     };
-    void decode_listen_opts(const Binary& opts, ListenOpts&);
+    void decode_sock_opts(const Binary& opts, SockOpts&);
 
     static ErlDrvMutex* map_mutex;
     typedef std::map<int, UtpPort*> FdMap;

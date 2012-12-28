@@ -23,6 +23,7 @@
 //
 // -------------------------------------------------------------------
 
+#include <list>
 #include "handler.h"
 #include "utils.h"
 #include "drv_types.h"
@@ -33,11 +34,16 @@ namespace UtpDrv {
 class UtpPort : public Handler
 {
 public:
+    enum DataDelivery {
+        DATA_LIST,
+        DATA_BINARY
+    };
+
     ~UtpPort();
 
     void process_exit(ErlDrvMonitor* monitor);
 
-    void outputv(const ErlIOVec& ev);
+    void outputv(ErlIOVec& ev);
 
     virtual bool
     set_port(ErlDrvPort p);
@@ -46,7 +52,7 @@ public:
     input_ready();
 
 protected:
-    UtpPort(int sock);
+    UtpPort(int sock, DataDelivery del, long send_timeout);
 
     void set_utp_callbacks(UTPSocket* utp);
 
@@ -58,6 +64,11 @@ protected:
 
     virtual ErlDrvSSizeT
     close(const char* buf, ErlDrvSizeT len, char** rbuf);
+
+    virtual ErlDrvSSizeT
+    setopts(const char* buf, ErlDrvSizeT len, char** rbuf);
+
+    ErlDrvSSizeT cancel_send();
 
     virtual void do_send_to(const byte* p, size_t len, const sockaddr* to,
                             socklen_t slen) = 0;
@@ -91,14 +102,18 @@ protected:
     void send_not_connected() const;
     void demonitor();
 
+    typedef std::list<ErlDrvTermData> WaitingWriters;
+    WaitingWriters waiting_writers;
+
+    ErlDrvSSizeT send_tmout;
     Binary caller_ref;
     ErlDrvPort port;
     ErlDrvMonitor mon;
     ErlDrvPDL pdl;
     ErlDrvTermData caller;
     UTPSocket* utp;
-    ErlDrvCond* condvar;
     PortStatus status;
+    DataDelivery delivery_type;
     int udp_sock, state, error_code;
     bool writable, mon_valid;
 };

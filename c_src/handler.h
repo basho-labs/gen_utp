@@ -35,10 +35,11 @@ enum Commands {
     UTP_LISTEN = 1,
     UTP_CONNECT_START,
     UTP_CONNECT_VALIDATE,
-    UTP_RECV,
     UTP_CLOSE,
     UTP_SOCKNAME,
-    UTP_PEERNAME
+    UTP_PEERNAME,
+    UTP_SETOPTS,
+    UTP_CANCEL_SEND
 };
 
 
@@ -52,7 +53,7 @@ public:
             char** rbuf, ErlDrvSizeT rlen) = 0;
 
     virtual void
-    outputv(const ErlIOVec& ev) = 0;
+    outputv(ErlIOVec& ev) = 0;
 
     virtual void stop() = 0;
     virtual void process_exit(ErlDrvMonitor* monitor) = 0;

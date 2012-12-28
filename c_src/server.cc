@@ -28,8 +28,9 @@
 
 using namespace UtpDrv;
 
-UtpDrv::Server::Server(Listener& lr, UTPSocket* us) :
-    UtpPort(INVALID_SOCKET), listener(lr)
+UtpDrv::Server::Server(Listener& lr, UTPSocket* us,
+                       DataDelivery del, long send_timeout) :
+    UtpPort(INVALID_SOCKET, del, send_timeout), listener(lr)
 {
     UTPDRV_TRACE("Server::Server\r\n");
     utp = us;
@@ -55,8 +56,8 @@ UtpDrv::Server::control(unsigned command, const char* buf, ErlDrvSizeT len,
         return listener.sockname(buf, len, rbuf);
     case UTP_PEERNAME:
         return peername(buf, len, rbuf);
-    case UTP_RECV:
-        return encode_error(rbuf, ENOTCONN);
+    case UTP_SETOPTS:
+        return setopts(buf, len, rbuf);
     }
     return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
 }

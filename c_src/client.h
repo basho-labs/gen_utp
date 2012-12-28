@@ -32,7 +32,7 @@ namespace UtpDrv {
 class Client : public UtpPort
 {
 public:
-    explicit Client(int sock);
+    Client(int sock, const Binary& ref, DataDelivery del, long send_timeout);
     ~Client();
 
     ErlDrvSSizeT

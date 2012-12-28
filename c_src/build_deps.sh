@@ -14,7 +14,7 @@ case "$1" in
 
     *)
         if [ ! -f libutp/libutp.a ]; then
-            tar -xzf libutp-${VSN}.tar.gz
+            [ -d libutp ] || tar -xzf libutp-${VSN}.tar.gz
             ( cd libutp && make CXXFLAGS+="$DRV_CFLAGS" )
         fi
         make all

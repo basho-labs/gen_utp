@@ -21,6 +21,7 @@
 // -------------------------------------------------------------------
 
 #include <unistd.h>
+#include <netinet/in.h>
 #include <fcntl.h>
 #include "utils.h"
 #include "coder.h"
@@ -47,6 +48,16 @@ UtpDrv::SockAddr::SockAddr(const char* addrstr, unsigned short port)
     from_addrport(addrstr, port);
 }
 
+UtpDrv::SockAddr::SockAddr(in_addr_t inaddr, unsigned short port)
+{
+    from_addrport(inaddr, port);
+}
+
+UtpDrv::SockAddr::SockAddr(const in6_addr& inaddr6, unsigned short port)
+{
+    from_addrport(inaddr6, port);
+}
+
 void
 UtpDrv::SockAddr::from_addrport(const char* addrstr, unsigned short port)
 {
@@ -57,7 +68,7 @@ UtpDrv::SockAddr::from_addrport(const char* addrstr, unsigned short port)
     hints.ai_family = PF_UNSPEC;
     hints.ai_protocol = IPPROTO_UDP;
     hints.ai_flags = AI_NUMERICHOST;
-    addrinfo *ai;
+    addrinfo* ai;
     if (getaddrinfo(addrstr, 0, &hints, &ai) != 0) {
         throw BadSockAddr();
     }
@@ -73,6 +84,28 @@ UtpDrv::SockAddr::from_addrport(const char* addrstr, unsigned short port)
     } else {
         throw BadSockAddr();
     }
+}
+
+void
+UtpDrv::SockAddr::from_addrport(in_addr_t inaddr, unsigned short port)
+{
+    memset(&addr, 0, sizeof addr);
+    sockaddr_in* sa_in = reinterpret_cast<sockaddr_in*>(&addr);
+    sa_in->sin_family = AF_INET;
+    sa_in->sin_addr.s_addr = inaddr;
+    sa_in->sin_port = htons(port);
+    slen = sizeof(sockaddr_in);
+}
+
+void
+UtpDrv::SockAddr::from_addrport(const in6_addr& inaddr6, unsigned short port)
+{
+    memset(&addr, 0, sizeof addr);
+    sockaddr_in6* sa_in6 = reinterpret_cast<sockaddr_in6*>(&addr);
+    sa_in6->sin6_family = AF_INET6;
+    sa_in6->sin6_addr = inaddr6;
+    sa_in6->sin6_port = htons(port);
+    slen = sizeof(sockaddr_in);
 }
 
 void
@@ -182,7 +215,7 @@ UtpDrv::encode_error(char** rbuf, int error)
 int
 UtpDrv::open_udp_socket(int& udp_sock, unsigned short port)
 {
-    SockAddr addr("0.0.0.0", port);
+    SockAddr addr(INADDR_ANY, port);
     return open_udp_socket(udp_sock, addr);
 }
 
