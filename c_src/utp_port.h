@@ -27,6 +27,7 @@
 #include "handler.h"
 #include "utils.h"
 #include "drv_types.h"
+#include "write_queue.h"
 
 
 namespace UtpDrv {
@@ -103,10 +104,12 @@ protected:
     void demonitor();
 
     typedef std::list<ErlDrvTermData> WaitingWriters;
-    WaitingWriters waiting_writers;
 
-    ErlDrvSSizeT send_tmout;
+    WaitingWriters waiting_writers;
+    WriteQueue write_queue;
     Binary caller_ref;
+    ErlDrvMutex* write_q_mutex;
+    ErlDrvSSizeT send_tmout;
     ErlDrvPort port;
     ErlDrvMonitor mon;
     ErlDrvPDL pdl;

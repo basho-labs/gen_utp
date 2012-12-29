@@ -31,13 +31,15 @@ using namespace UtpDrv;
 
 UtpDrv::UtpPort::UtpPort(int sock, DataDelivery del, long send_tm) :
     send_tmout(send_tm), port(0), pdl(0), caller(driver_term_nil), utp(0),
-    status(not_connected), delivery_type(del), udp_sock(sock),
-    state(0), error_code(0), writable(false), mon_valid(false)
+    status(not_connected), delivery_type(del), udp_sock(sock), state(0),
+    error_code(0), writable(false), mon_valid(false)
 {
+    write_q_mutex = erl_drv_mutex_create(const_cast<char*>("write_q_mutex"));
 }
 
 UtpDrv::UtpPort::~UtpPort()
 {
+    erl_drv_mutex_destroy(write_q_mutex);
 }
 
 void
@@ -152,16 +154,30 @@ UtpDrv::UtpPort::outputv(ErlIOVec& ev)
         return;
     }
 
-    MutexLocker lock(utp_mutex);
-
     ErlDrvTermData caller = driver_caller(port);
     ErlDrvTermData utp_reply = driver_mk_atom(const_cast<char*>("utp_reply"));
     if (writable) {
-        if (ev.size != 0) {
-            PdlLocker pdl_lock(pdl);
-            driver_enqv(port, &ev, 0);
+        if (ev.size > 0) {
+            MutexLocker lock(write_q_mutex);
+            for (int i = 0; i < ev.vsize; ++i) {
+                ErlDrvBinary* bin = 0;
+                if (ev.binv[i] != 0) {
+                    bin = ev.binv[i];
+                    driver_binary_inc_refc(bin);
+                } else if (ev.iov[i].iov_len > 0) {
+                    const SysIOVec& vec = ev.iov[i];
+                    bin = driver_alloc_binary(vec.iov_len);
+                    memcpy(bin->orig_bytes, vec.iov_base, vec.iov_len);
+                }
+                if (bin != 0) {
+                    write_queue.push_back(bin);
+                }
+            }
         }
-        writable = UTP_Write(utp, ev.size);
+        {
+            MutexLocker lock(utp_mutex);
+            writable = UTP_Write(utp, write_queue.size());
+        }
         ErlDrvTermData term[] = {
             ERL_DRV_ATOM, utp_reply,
             ERL_DRV_PORT, driver_mk_port(port),
@@ -181,7 +197,10 @@ UtpDrv::UtpPort::outputv(ErlIOVec& ev)
             };
             driver_send_term(port, caller, term, sizeof term/sizeof *term);
         } else {
-            waiting_writers.push_back(caller);
+            {
+                MutexLocker lock(utp_mutex);
+                waiting_writers.push_back(caller);
+            }
             ErlDrvTermData term[12] = {
                 ERL_DRV_ATOM, utp_reply,
                 ERL_DRV_PORT, driver_mk_port(port),
@@ -297,20 +316,8 @@ UtpDrv::UtpPort::do_write(byte* bytes, size_t count)
 {
     UTPDRV_TRACE("UtpPort::do_write\r\n");
     if (count == 0) return;
-    PdlLocker pdl_lock(pdl);
-    if (driver_sizeq(port) < count) {
-        // TODO: error
-    }
-    int vlen, index = 0, i = 0;
-    SysIOVec* iovec = driver_peekq(port, &vlen);
-    for (size_t needed = count; i < vlen && needed != 0; ++i) {
-        unsigned long iov_len = iovec[i].iov_len;
-        size_t to_copy = (iov_len > needed) ? needed : iov_len;
-        memcpy(bytes+index, iovec[i].iov_base, to_copy);
-        index += to_copy;
-        needed -= to_copy;
-    }
-    driver_deq(port, count);
+    MutexLocker lock(write_q_mutex);
+    write_queue.pop_bytes(bytes, count);
 }
 
 size_t
@@ -333,13 +340,9 @@ UtpDrv::UtpPort::do_state_change(int s)
     case UTP_STATE_WRITABLE:
         writable = true;
         {
-            ErlDrvSizeT size;
-            {
-                PdlLocker pdl_lock(pdl);
-                size = driver_sizeq(port);
-            }
-            if (size > 0) {
-                writable = UTP_Write(utp, size);
+            size_t sz = write_queue.size();
+            if (sz > 0) {
+                writable = UTP_Write(utp, sz);
             }
         }
         if (writable) {
