@@ -1,6 +1,6 @@
 // -------------------------------------------------------------------
 //
-// utp_port.cc: base class for created uTP ports
+// utp_handler.cc: base class for uTP port handlers
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -20,16 +20,16 @@
 //
 // -------------------------------------------------------------------
 
-#include "utp_port.h"
+#include "utp_handler.h"
 #include "locker.h"
 #include "globals.h"
-#include "main_port.h"
+#include "main_handler.h"
 #include "utils.h"
 
 
 using namespace UtpDrv;
 
-UtpDrv::UtpPort::UtpPort(int sock, DataDelivery del, long send_tm) :
+UtpDrv::UtpHandler::UtpHandler(int sock, DataDelivery del, long send_tm) :
     SocketHandler(sock),
     send_tmout(send_tm), pdl(0), caller(driver_term_nil), utp(0),
     status(not_connected), data_delivery(del), state(0),
@@ -38,24 +38,24 @@ UtpDrv::UtpPort::UtpPort(int sock, DataDelivery del, long send_tm) :
     write_q_mutex = erl_drv_mutex_create(const_cast<char*>("write_q_mutex"));
 }
 
-UtpDrv::UtpPort::~UtpPort()
+UtpDrv::UtpHandler::~UtpHandler()
 {
     erl_drv_mutex_destroy(write_q_mutex);
 }
 
 void
-UtpDrv::UtpPort::process_exit(ErlDrvMonitor* monitor)
+UtpDrv::UtpHandler::process_exit(ErlDrvMonitor* monitor)
 {
-    UTPDRV_TRACE("UtpPort::process_exit\r\n");
-    MainPort::del_monitor(port, *monitor);
+    UTPDRV_TRACE("UtpHandler::process_exit\r\n");
+    MainHandler::del_monitor(port, *monitor);
     mon_valid = false;
     driver_failure_eof(port);
 }
 
 void
-UtpDrv::UtpPort::set_port(ErlDrvPort p)
+UtpDrv::UtpHandler::set_port(ErlDrvPort p)
 {
-    UTPDRV_TRACE("UtpPort::set_port\r\n");
+    UTPDRV_TRACE("UtpHandler::set_port\r\n");
     Handler::set_port(p);
     pdl = driver_pdl_create(port);
     if (pdl == 0) {
@@ -64,7 +64,7 @@ UtpDrv::UtpPort::set_port(ErlDrvPort p)
 }
 
 void
-UtpDrv::UtpPort::input_ready()
+UtpDrv::UtpHandler::input_ready()
 {
     // TODO: when recv buffer sizes can be varied, the following buffer will
     // need to come from a pool
@@ -73,41 +73,41 @@ UtpDrv::UtpPort::input_ready()
     int len = recvfrom(udp_sock, buf, sizeof buf, 0, addr, &addr.slen);
     if (len > 0) {
         MutexLocker lock(utp_mutex);
-        UTP_IsIncomingUTP(&UtpPort::utp_incoming,
-                          &UtpPort::send_to, this,
+        UTP_IsIncomingUTP(&UtpHandler::utp_incoming,
+                          &UtpHandler::send_to, this,
                           buf, len, addr, addr.slen);
     }
 }
 
 void
-UtpDrv::UtpPort::demonitor()
+UtpDrv::UtpHandler::demonitor()
 {
-    UTPDRV_TRACE("UtpPort::demonitor\r\n");
-    MainPort::del_monitor(port, mon);
+    UTPDRV_TRACE("UtpHandler::demonitor\r\n");
+    MainHandler::del_monitor(port, mon);
     mon_valid = false;
 }
 
 // NB: this function must be called with the utp_mutex locked.
 void
-UtpDrv::UtpPort::set_utp_callbacks(UTPSocket* utp)
+UtpDrv::UtpHandler::set_utp_callbacks(UTPSocket* utp)
 {
-    UTPDRV_TRACE("UtpPort::set_utp_callbacks\r\n");
+    UTPDRV_TRACE("UtpHandler::set_utp_callbacks\r\n");
     UTPFunctionTable funcs = {
-        &UtpPort::utp_read,
-        &UtpPort::utp_write,
-        &UtpPort::utp_get_rb_size,
-        &UtpPort::utp_state_change,
-        &UtpPort::utp_error,
-        &UtpPort::utp_overhead,
+        &UtpHandler::utp_read,
+        &UtpHandler::utp_write,
+        &UtpHandler::utp_get_rb_size,
+        &UtpHandler::utp_state_change,
+        &UtpHandler::utp_error,
+        &UtpHandler::utp_overhead,
     };
     UTP_SetCallbacks(utp, &funcs, this);
 }
 
 ErlDrvSSizeT
-UtpDrv::UtpPort::peername(const char* buf, ErlDrvSizeT len,
-                          char** rbuf, ErlDrvSizeT rlen)
+UtpDrv::UtpHandler::peername(const char* buf, ErlDrvSizeT len,
+                             char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("UtpPort::peername\r\n");
+    UTPDRV_TRACE("UtpHandler::peername\r\n");
     if (status != connected || utp == 0) {
         return encode_error(rbuf, rlen, ENOTCONN);
     }
@@ -120,9 +120,9 @@ UtpDrv::UtpPort::peername(const char* buf, ErlDrvSizeT len,
 }
 
 void
-UtpDrv::UtpPort::outputv(ErlIOVec& ev)
+UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
 {
-    UTPDRV_TRACE("UtpPort::outputv\r\n");
+    UTPDRV_TRACE("UtpHandler::outputv\r\n");
     if (status != connected || utp == 0) {
         send_not_connected(port);
         return;
@@ -198,10 +198,10 @@ UtpDrv::UtpPort::outputv(ErlIOVec& ev)
 }
 
 void
-UtpDrv::UtpPort::stop()
+UtpDrv::UtpHandler::stop()
 {
     UTPDRV_TRACE("Client::stop\r\n");
-    MainPort::stop_input(udp_sock);
+    MainHandler::stop_input(udp_sock);
     if (utp == 0 && status == destroying) {
         delete this;
     } else {
@@ -214,16 +214,16 @@ UtpDrv::UtpPort::stop()
 }
 
 ErlDrvSSizeT
-UtpDrv::UtpPort::close(const char* buf, ErlDrvSizeT len,
-                       char** rbuf, ErlDrvSizeT rlen)
+UtpDrv::UtpHandler::close(const char* buf, ErlDrvSizeT len,
+                          char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("UtpPort::close\r\n");
+    UTPDRV_TRACE("UtpHandler::close\r\n");
     const char* retval = "ok";
     if (status != closing && status != destroying) {
         MutexLocker lock(utp_mutex);
         status = closing;
         if (mon_valid) {
-            MainPort::del_monitor(port, mon);
+            MainHandler::del_monitor(port, mon);
             mon_valid = false;
         }
         if (utp != 0) {
@@ -250,15 +250,15 @@ UtpDrv::UtpPort::close(const char* buf, ErlDrvSizeT len,
 }
 
 ErlDrvSSizeT
-UtpDrv::UtpPort::setopts(const char* buf, ErlDrvSizeT len,
-                         char** rbuf, ErlDrvSizeT rlen)
+UtpDrv::UtpHandler::setopts(const char* buf, ErlDrvSizeT len,
+                            char** rbuf, ErlDrvSizeT rlen)
 {
     // TODO: implement options
     return 0;
 }
 
 ErlDrvSSizeT
-UtpDrv::UtpPort::cancel_send()
+UtpDrv::UtpHandler::cancel_send()
 {
     ErlDrvTermData caller = driver_caller(port);
     MutexLocker lock(utp_mutex);
@@ -273,7 +273,7 @@ UtpDrv::UtpPort::cancel_send()
 }
 
 void
-UtpDrv::UtpPort::close_utp()
+UtpDrv::UtpHandler::close_utp()
 {
     if (utp != 0 && status != destroying) {
         status = closing;
@@ -283,10 +283,10 @@ UtpDrv::UtpPort::close_utp()
 }
 
 void
-UtpDrv::UtpPort::do_send_to(const byte* p, size_t len,
-                            const sockaddr* to, socklen_t slen)
+UtpDrv::UtpHandler::do_send_to(const byte* p, size_t len,
+                               const sockaddr* to, socklen_t slen)
 {
-    UTPDRV_TRACE("UtpPort::do_send_to\r\n");
+    UTPDRV_TRACE("UtpHandler::do_send_to\r\n");
     if (udp_sock != INVALID_SOCKET) {
         int index = 0;
         for (;;) {
@@ -305,9 +305,9 @@ UtpDrv::UtpPort::do_send_to(const byte* p, size_t len,
 }
 
 void
-UtpDrv::UtpPort::do_read(const byte* bytes, size_t count)
+UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
 {
-    UTPDRV_TRACE("UtpPort::do_read\r\n");
+    UTPDRV_TRACE("UtpHandler::do_read\r\n");
     if (count == 0) return;
     char* buf = const_cast<char*>(reinterpret_cast<const char*>(bytes));
     ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(buf);
@@ -325,25 +325,25 @@ UtpDrv::UtpPort::do_read(const byte* bytes, size_t count)
 }
 
 void
-UtpDrv::UtpPort::do_write(byte* bytes, size_t count)
+UtpDrv::UtpHandler::do_write(byte* bytes, size_t count)
 {
-    UTPDRV_TRACE("UtpPort::do_write\r\n");
+    UTPDRV_TRACE("UtpHandler::do_write\r\n");
     if (count == 0) return;
     MutexLocker lock(write_q_mutex);
     write_queue.pop_bytes(bytes, count);
 }
 
 size_t
-UtpDrv::UtpPort::do_get_rb_size()
+UtpDrv::UtpHandler::do_get_rb_size()
 {
-    UTPDRV_TRACE("UtpPort::do_get_rb_size\r\n");
+    UTPDRV_TRACE("UtpHandler::do_get_rb_size\r\n");
     return 0;
 }
 
 void
-UtpDrv::UtpPort::do_state_change(int s)
+UtpDrv::UtpHandler::do_state_change(int s)
 {
-    UTPDRV_TRACE("UtpPort::do_state_change\r\n");
+    UTPDRV_TRACE("UtpHandler::do_state_change\r\n");
     state = s;
     switch (state) {
     case UTP_STATE_EOF:
@@ -393,7 +393,7 @@ UtpDrv::UtpPort::do_state_change(int s)
         break;
 
     case UTP_STATE_DESTROYING:
-        MainPort::stop_input(udp_sock);
+        MainHandler::stop_input(udp_sock);
         if (status == closing) {
             ErlDrvTermData term[] = {
                 ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
@@ -417,9 +417,9 @@ UtpDrv::UtpPort::do_state_change(int s)
 }
 
 void
-UtpDrv::UtpPort::do_error(int errcode)
+UtpDrv::UtpHandler::do_error(int errcode)
 {
-    UTPDRV_TRACE("UtpPort::do_error\r\n");
+    UTPDRV_TRACE("UtpHandler::do_error\r\n");
     error_code = errcode;
     switch (status) {
     case connect_pending:
@@ -442,56 +442,56 @@ UtpDrv::UtpPort::do_error(int errcode)
 }
 
 void
-UtpDrv::UtpPort::do_overhead(bool send, size_t count, int type)
+UtpDrv::UtpHandler::do_overhead(bool send, size_t count, int type)
 {
     // do nothing
 }
 
 void
-UtpDrv::UtpPort::send_to(void* data, const byte* p, size_t len,
-                         const sockaddr* to, socklen_t slen)
+UtpDrv::UtpHandler::send_to(void* data, const byte* p, size_t len,
+                            const sockaddr* to, socklen_t slen)
 {
-    (static_cast<UtpPort*>(data))->do_send_to(p, len, to, slen);
+    (static_cast<UtpHandler*>(data))->do_send_to(p, len, to, slen);
 }
 
 void
-UtpDrv::UtpPort::utp_read(void* data, const byte* bytes, size_t count)
+UtpDrv::UtpHandler::utp_read(void* data, const byte* bytes, size_t count)
 {
-    (static_cast<UtpPort*>(data))->do_read(bytes, count);
+    (static_cast<UtpHandler*>(data))->do_read(bytes, count);
 }
 
 void
-UtpDrv::UtpPort::utp_write(void* data, byte* bytes, size_t count)
+UtpDrv::UtpHandler::utp_write(void* data, byte* bytes, size_t count)
 {
-    (static_cast<UtpPort*>(data))->do_write(bytes, count);
+    (static_cast<UtpHandler*>(data))->do_write(bytes, count);
 }
 
 size_t
-UtpDrv::UtpPort::utp_get_rb_size(void* data)
+UtpDrv::UtpHandler::utp_get_rb_size(void* data)
 {
-    return (static_cast<UtpPort*>(data))->do_get_rb_size();
+    return (static_cast<UtpHandler*>(data))->do_get_rb_size();
 }
 
 void
-UtpDrv::UtpPort::utp_state_change(void* data, int state)
+UtpDrv::UtpHandler::utp_state_change(void* data, int state)
 {
-    (static_cast<UtpPort*>(data))->do_state_change(state);
+    (static_cast<UtpHandler*>(data))->do_state_change(state);
 }
 
 void
-UtpDrv::UtpPort::utp_error(void* data, int errcode)
+UtpDrv::UtpHandler::utp_error(void* data, int errcode)
 {
-    (static_cast<UtpPort*>(data))->do_error(errcode);
+    (static_cast<UtpHandler*>(data))->do_error(errcode);
 }
 
 void
-UtpDrv::UtpPort::utp_overhead(void* data, bool send, size_t count, int type)
+UtpDrv::UtpHandler::utp_overhead(void* data, bool send, size_t count, int type)
 {
-    (static_cast<UtpPort*>(data))->do_overhead(send, count, type);
+    (static_cast<UtpHandler*>(data))->do_overhead(send, count, type);
 }
 
 void
-UtpDrv::UtpPort::utp_incoming(void* data, UTPSocket* utp)
+UtpDrv::UtpHandler::utp_incoming(void* data, UTPSocket* utp)
 {
-    (static_cast<UtpPort*>(data))->do_incoming(utp);
+    (static_cast<UtpHandler*>(data))->do_incoming(utp);
 }

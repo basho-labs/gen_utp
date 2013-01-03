@@ -1,9 +1,9 @@
-#ifndef UTPDRV_MAIN_PORT_H
-#define UTPDRV_MAIN_PORT_H
+#ifndef UTPDRV_MAIN_HANDLER_H
+#define UTPDRV_MAIN_HANDLER_H
 
 // -------------------------------------------------------------------
 //
-// main_port.h: primary port for uTP driver
+// main_handler.h: handler for primary uTP driver port
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -26,17 +26,17 @@
 #include <map>
 #include "handler.h"
 #include "utils.h"
-#include "utp_port.h"
+#include "utp_handler.h"
 #include "drv_types.h"
 
 
 namespace UtpDrv {
 
-class MainPort : public Handler
+class MainHandler : public Handler
 {
 public:
-    explicit MainPort(ErlDrvPort p);
-    ~MainPort();
+    explicit MainHandler(ErlDrvPort p);
+    ~MainHandler();
 
     static int driver_init();
     static void driver_finish();
@@ -63,7 +63,7 @@ public:
 
 private:
     // singleton
-    static MainPort* main_port;
+    static MainHandler* main_handler;
 
     ErlDrvTermData owner;
 
@@ -95,8 +95,8 @@ private:
     void del_mon(ErlDrvPort port, ErlDrvMonitor& mon);
 
     // prevent copies
-    MainPort(const MainPort&);
-    void operator=(const MainPort&);
+    MainHandler(const MainHandler&);
+    void operator=(const MainHandler&);
 };
 
 }

@@ -1,9 +1,9 @@
-#ifndef UTPDRV_UTP_PORT_H
-#define UTPDRV_UTP_PORT_H
+#ifndef UTPDRV_UTP_HANDLER_H
+#define UTPDRV_UTP_HANDLER_H
 
 // -------------------------------------------------------------------
 //
-// utp_port.h: base class for created uTP ports
+// utp_handler.h: base class for uTP port handlers
 //
 // Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -32,10 +32,10 @@
 
 namespace UtpDrv {
 
-class UtpPort : public SocketHandler
+class UtpHandler : public SocketHandler
 {
 public:
-    ~UtpPort();
+    ~UtpHandler();
 
     void process_exit(ErlDrvMonitor* monitor);
 
@@ -60,7 +60,7 @@ public:
     static void utp_incoming(void* data, UTPSocket* utp);
 
 protected:
-    UtpPort(int sock, DataDelivery del, long send_timeout);
+    UtpHandler(int sock, DataDelivery del, long send_timeout);
 
     void set_utp_callbacks(UTPSocket* utp);
 

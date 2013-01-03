@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include "listener.h"
 #include "globals.h"
-#include "main_port.h"
+#include "main_handler.h"
 #include "utils.h"
 #include "locker.h"
 #include "server.h"
@@ -72,7 +72,7 @@ void
 UtpDrv::Listener::stop()
 {
     UTPDRV_TRACE("Listener::stop\r\n");
-    MainPort::stop_input(udp_sock);
+    MainHandler::stop_input(udp_sock);
     delete this;
 }
 
@@ -109,15 +109,15 @@ UtpDrv::Listener::input_ready()
         bool is_utp;
         {
             MutexLocker lock(utp_mutex);
-            is_utp = UTP_IsIncomingUTP(&UtpPort::utp_incoming,
-                                       &UtpPort::send_to, server,
+            is_utp = UTP_IsIncomingUTP(&UtpHandler::utp_incoming,
+                                       &UtpHandler::send_to, server,
                                        buf, len, from, from.slen);
         }
         if (is_utp) {
             ErlDrvTermData owner = driver_connected(port);
             ErlDrvPort new_port = create_port(owner, server);
             server->set_port(new_port);
-            MainPort::start_input(sock, server);
+            MainHandler::start_input(sock, server);
             ErlDrvTermData term[sizeof(in6_addr) + 12] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
                 ERL_DRV_PORT, driver_mk_port(new_port),

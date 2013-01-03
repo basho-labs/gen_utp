@@ -29,7 +29,7 @@
 using namespace UtpDrv;
 
 UtpDrv::Server::Server(int sock, DataDelivery del, long send_timeout) :
-    UtpPort(sock, del, send_timeout)
+    UtpHandler(sock, del, send_timeout)
 {
     UTPDRV_TRACE("Server::Server\r\n");
 }

@@ -7,8 +7,8 @@
 # out-of-date .o files will have been deleted and it will rebuild them.
 #
 TGTS := client.dep coder.dep drv_types.dep globals.dep handler.dep \
-	listener.dep main_port.dep server.dep socket_handler.dep \
-	utils.dep utp_port.dep utpdrv.dep write_queue.dep
+	listener.dep main_handler.dep server.dep socket_handler.dep \
+	utils.dep utp_handler.dep utpdrv.dep write_queue.dep
 
 all: $(TGTS)
 
@@ -21,7 +21,7 @@ clean:
 	@rm -f ${@:.dep=.o}
 	@touch $@
 
-client.dep: client.cc client.h utp_port.h socket_handler.h handler.h \
+client.dep: client.cc client.h utp_handler.h socket_handler.h handler.h \
   libutp/utp.h libutp/utypes.h drv_types.h coder.h utils.h \
   write_queue.h globals.h locker.h
 coder.dep: coder.cc coder.h
@@ -30,22 +30,23 @@ globals.dep: globals.cc globals.h
 handler.dep: handler.cc handler.h libutp/utp.h libutp/utypes.h globals.h
 listener.dep: listener.cc listener.h socket_handler.h handler.h \
   libutp/utp.h libutp/utypes.h drv_types.h coder.h utils.h \
-  globals.h main_port.h utp_port.h write_queue.h locker.h server.h
-main_port.dep: main_port.cc main_port.h handler.h libutp/utp.h libutp/utypes.h \
-  utils.h coder.h utp_port.h socket_handler.h drv_types.h write_queue.h \
+  globals.h main_handler.h utp_handler.h write_queue.h locker.h server.h
+main_handler.dep: main_handler.cc main_handler.h handler.h \
+  libutp/utp.h libutp/utypes.h \
+  utils.h coder.h utp_handler.h socket_handler.h drv_types.h write_queue.h \
   globals.h locker.h client.h listener.h
-server.dep: server.cc server.h utp_port.h socket_handler.h handler.h \
+server.dep: server.cc server.h utp_handler.h socket_handler.h handler.h \
   libutp/utp.h libutp/utypes.h drv_types.h coder.h \
   utils.h write_queue.h listener.h globals.h locker.h
 socket_handler.dep: socket_handler.cc socket_handler.h handler.h \
   libutp/utp.h libutp/utypes.h drv_types.h coder.h globals.h utils.h
-utils.dep: utils.cc utils.h coder.h globals.h main_port.h handler.h \
-  libutp/utp.h libutp/utypes.h utp_port.h socket_handler.h \
+utils.dep: utils.cc utils.h coder.h globals.h main_handler.h handler.h \
+  libutp/utp.h libutp/utypes.h utp_handler.h socket_handler.h \
   drv_types.h write_queue.h
-utp_port.dep: utp_port.cc utp_port.h socket_handler.h handler.h \
+utp_handler.dep: utp_handler.cc utp_handler.h socket_handler.h handler.h \
   libutp/utp.h libutp/utypes.h drv_types.h coder.h \
-  utils.h write_queue.h locker.h globals.h main_port.h
+  utils.h write_queue.h locker.h globals.h main_handler.h
 utpdrv.dep: utpdrv.cc globals.h \
-  main_port.h handler.h libutp/utp.h libutp/utypes.h utils.h coder.h \
-  utp_port.h socket_handler.h drv_types.h write_queue.h
+  main_handler.h handler.h libutp/utp.h libutp/utypes.h utils.h coder.h \
+  utp_handler.h socket_handler.h drv_types.h write_queue.h
 write_queue.dep: write_queue.cc write_queue.h

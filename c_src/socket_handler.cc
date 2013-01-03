@@ -129,7 +129,7 @@ ErlDrvSSizeT
 UtpDrv::SocketHandler::sockname(const char* buf, ErlDrvSizeT len,
                                 char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("UtpPort::sockname\r\n");
+    UTPDRV_TRACE("SocketHandler::sockname\r\n");
     SockAddr addr;
     if (getsockname(udp_sock, addr, &addr.slen) < 0) {
         return encode_error(rbuf, rlen, errno);

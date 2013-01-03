@@ -23,13 +23,13 @@
 //
 // -------------------------------------------------------------------
 
-#include "utp_port.h"
+#include "utp_handler.h"
 #include "utils.h"
 
 
 namespace UtpDrv {
 
-class Client : public UtpPort
+class Client : public UtpHandler
 {
 public:
     Client(int sock, const Binary& ref, DataDelivery del, long send_timeout);

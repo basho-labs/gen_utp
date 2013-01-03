@@ -23,7 +23,7 @@
 //
 // -------------------------------------------------------------------
 
-#include "utp_port.h"
+#include "utp_handler.h"
 #include "libutp/utp.h"
 
 
@@ -31,7 +31,7 @@ namespace UtpDrv {
 
 class Listener;
 
-class Server : public UtpPort
+class Server : public UtpHandler
 {
 public:
     Server(int sock, DataDelivery del, long send_timeout);

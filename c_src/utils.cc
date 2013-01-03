@@ -24,8 +24,8 @@
 #include "utils.h"
 #include "coder.h"
 #include "globals.h"
-#include "main_port.h"
-#include "utp_port.h"
+#include "main_handler.h"
+#include "utp_handler.h"
 
 
 using namespace UtpDrv;
@@ -70,7 +70,7 @@ ErlDrvPort
 UtpDrv::create_port(ErlDrvTermData owner, SocketHandler* h)
 {
     ErlDrvData port_drv_data = reinterpret_cast<ErlDrvData>(h);
-    ErlDrvPort new_port = driver_create_port(MainPort::drv_port(), owner,
+    ErlDrvPort new_port = driver_create_port(MainHandler::drv_port(), owner,
                                              drv_name, port_drv_data);
     return new_port;
 }

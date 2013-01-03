@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include "erl_driver.h"
 #include "globals.h"
-#include "main_port.h"
+#include "main_handler.h"
 
 
 using namespace UtpDrv;
@@ -31,19 +31,19 @@ using namespace UtpDrv;
 static int
 utp_init()
 {
-    return MainPort::driver_init();
+    return MainHandler::driver_init();
 }
 
 static void
 utp_finish()
 {
-    MainPort::driver_finish();
+    MainHandler::driver_finish();
 }
 
 static ErlDrvData
 utp_start(ErlDrvPort port, char* command)
 {
-    MainPort* drv = new MainPort(port);
+    MainHandler* drv = new MainHandler(port);
     drv->start();
     return reinterpret_cast<ErlDrvData>(drv);
 }
@@ -58,7 +58,7 @@ utp_stop(ErlDrvData drv_data)
 static void
 utp_check_timeouts(ErlDrvData drv_data)
 {
-    MainPort* drv = reinterpret_cast<MainPort*>(drv_data);
+    MainHandler* drv = reinterpret_cast<MainHandler*>(drv_data);
     drv->check_utp_timeouts();
 }
 
@@ -80,7 +80,7 @@ utp_control(ErlDrvData drv_data, unsigned int command,
 static void
 utp_ready_input(ErlDrvData drv_data, ErlDrvEvent event)
 {
-    MainPort* drv = reinterpret_cast<MainPort*>(drv_data);
+    MainHandler* drv = reinterpret_cast<MainHandler*>(drv_data);
     drv->ready_input(reinterpret_cast<long>(event));
 }
 

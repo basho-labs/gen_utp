@@ -30,7 +30,7 @@ using namespace UtpDrv;
 
 UtpDrv::Client::Client(int sock, const Binary& ref,
                        DataDelivery del, long send_timeout) :
-    UtpPort(sock, del, send_timeout)
+    UtpHandler(sock, del, send_timeout)
 {
     UTPDRV_TRACE("Client::Client\r\n");
     caller_ref = ref;
@@ -50,7 +50,7 @@ UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
     case UTP_CONNECT_VALIDATE:
         return connect_validate(buf, len, rbuf, rlen);
     case UTP_SOCKNAME:
-        return UtpPort::sockname(buf, len, rbuf, rlen);
+        return UtpHandler::sockname(buf, len, rbuf, rlen);
     case UTP_PEERNAME:
         return peername(buf, len, rbuf, rlen);
     case UTP_CLOSE:
