@@ -24,55 +24,28 @@
 // -------------------------------------------------------------------
 
 #include <exception>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>
 #include "erl_driver.h"
 #include "coder.h"
 
 
 namespace UtpDrv {
 
-class UtpPort;
-
-struct BadSockAddr : public std::exception {};
-
-struct SockAddr {
-    sockaddr_storage addr;
-    socklen_t slen;
-    SockAddr();
-    SockAddr(const sockaddr& sa, socklen_t sl);
-    SockAddr(const char* addrstr, unsigned short port);
-    SockAddr(in_addr_t inaddr, unsigned short port);
-    SockAddr(const in6_addr& inaddr6, unsigned short port);
-    void from_addrport(const char* addrstr, unsigned short port);
-    void from_addrport(in_addr_t inaddr, unsigned short port);
-    void from_addrport(const in6_addr& inaddr6, unsigned short port);
-    void to_addrport(char* addrstr, size_t alen, unsigned short& port) const;
-    int family() const;
-    ErlDrvSSizeT encode(char** rbuf) const;
-    bool operator<(const SockAddr& sa) const;
-    operator sockaddr*();
-    operator const sockaddr*() const;
-};
+class SocketHandler;
 
 extern ErlDrvSSizeT
-encode_atom(char** rbuf, const char* atom);
+encode_atom(char** rbuf, ErlDrvSizeT rlen, const char* atom);
 
 extern ErlDrvSSizeT
-encode_error(char** rbuf, const char* error);
+encode_error(char** rbuf, ErlDrvSizeT rlen, const char* error);
 
 extern ErlDrvSSizeT
-encode_error(char** rbuf, int error);
-
-extern int
-open_udp_socket(int& udp_sock, unsigned short port = 0);
-extern int
-open_udp_socket(int& udp_sock, const SockAddr& sa);
+encode_error(char** rbuf, ErlDrvSizeT rlen, int error);
 
 extern ErlDrvPort
-create_port(ErlDrvTermData owner, UtpPort* p);
+create_port(ErlDrvTermData owner, SocketHandler* p);
 
+extern void
+send_not_connected(ErlDrvPort port);
 
 // A static instance of the following class is created up front to hold the
 // binary form of the {error, enomem} Erlang term. The binary is then used

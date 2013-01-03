@@ -48,28 +48,19 @@ UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
     UTPDRV_TRACE("Client::control\r\n");
     switch (command) {
     case UTP_CONNECT_VALIDATE:
-        return connect_validate(buf, len, rbuf);
+        return connect_validate(buf, len, rbuf, rlen);
     case UTP_SOCKNAME:
-        return UtpPort::sockname(buf, len, rbuf);
+        return UtpPort::sockname(buf, len, rbuf, rlen);
     case UTP_PEERNAME:
-        return peername(buf, len, rbuf);
+        return peername(buf, len, rbuf, rlen);
     case UTP_CLOSE:
-        return close(buf, len, rbuf);
+        return close(buf, len, rbuf, rlen);
     case UTP_SETOPTS:
-        return setopts(buf, len, rbuf);
+        return setopts(buf, len, rbuf, rlen);
     case UTP_CANCEL_SEND:
         return cancel_send();
     default:
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
-    }
-}
-
-void
-UtpDrv::Client::stop()
-{
-    UTPDRV_TRACE("Client::stop\r\n");
-    if (main_port) {
-        main_port->deselect(udp_sock);
     }
 }
 
@@ -85,62 +76,14 @@ UtpDrv::Client::connect_to(const SockAddr& addr)
 }
 
 void
-UtpDrv::Client::do_send_to(const byte* p, size_t len,
-                           const sockaddr* to, socklen_t slen)
-{
-    UTPDRV_TRACE("Client::do_send_to\r\n");
-    UtpPort::do_send_to(p, len, to, slen);
-}
-
-void
-UtpDrv::Client::do_read(const byte* bytes, size_t count)
-{
-    UTPDRV_TRACE("Client::do_read\r\n");
-    UtpPort::do_read(bytes, count);
-}
-
-void
-UtpDrv::Client::do_write(byte* bytes, size_t count)
-{
-    UTPDRV_TRACE("Client::do_write\r\n");
-    UtpPort::do_write(bytes, count);
-}
-
-size_t
-UtpDrv::Client::do_get_rb_size()
-{
-    UTPDRV_TRACE("Client::do_get_rb_size\r\n");
-    return UtpPort::do_get_rb_size();
-}
-
-void
-UtpDrv::Client::do_state_change(int s)
-{
-    UTPDRV_TRACE("Client::do_state_change\r\n");
-    UtpPort::do_state_change(s);
-}
-
-void
-UtpDrv::Client::do_error(int errcode)
-{
-    UTPDRV_TRACE("Client::do_error\r\n");
-    UtpPort::do_error(errcode);
-}
-
-void
-UtpDrv::Client::do_overhead(bool send, size_t count, int type)
-{
-    UtpPort::do_overhead(send, count, type);
-}
-
-void
 UtpDrv::Client::do_incoming(UTPSocket* utp)
 {
     UTPDRV_TRACE("Client::do_incoming\r\n");
 }
 
 ErlDrvSSizeT
-UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf)
+UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len,
+                                 char** rbuf, ErlDrvSizeT rlen)
 {
     UTPDRV_TRACE("Client::connect_validate\r\n");
     Binary ref;
@@ -181,7 +124,6 @@ UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf)
         }
         break;
     }
-    ErlDrvSSizeT retsize;
-    *rbuf = reinterpret_cast<char*>(encoder.copy_to_binary(retsize));
-    return retsize;
+    ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+    return encoder.copy_to_binary(binptr, rlen);
 }

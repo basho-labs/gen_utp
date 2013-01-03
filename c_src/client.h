@@ -39,22 +39,13 @@ public:
     control(unsigned command, const char* buf, ErlDrvSizeT len,
             char** rbuf, ErlDrvSizeT rlen);
 
-    void stop();
-
     void connect_to(const SockAddr& addr);
 
 private:
     ErlDrvSSizeT
-    connect_validate(const char* buf, ErlDrvSizeT len, char** rbuf);
+    connect_validate(const char* buf, ErlDrvSizeT len,
+                     char** rbuf, ErlDrvSizeT rlen);
 
-    void do_send_to(const byte* p, size_t len, const sockaddr* to,
-                    socklen_t slen);
-    void do_read(const byte* bytes, size_t count);
-    void do_write(byte* bytes, size_t count);
-    size_t do_get_rb_size();
-    void do_state_change(int state);
-    void do_error(int errcode);
-    void do_overhead(bool send, size_t count, int type);
     void do_incoming(UTPSocket* utp);
 
     // prevent copies

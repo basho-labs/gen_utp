@@ -24,7 +24,7 @@
 // -------------------------------------------------------------------
 
 #include <list>
-#include "handler.h"
+#include "socket_handler.h"
 #include "utils.h"
 #include "drv_types.h"
 #include "write_queue.h"
@@ -32,54 +32,22 @@
 
 namespace UtpDrv {
 
-class UtpPort : public Handler
+class UtpPort : public SocketHandler
 {
 public:
-    enum DataDelivery {
-        DATA_LIST,
-        DATA_BINARY
-    };
-
     ~UtpPort();
 
     void process_exit(ErlDrvMonitor* monitor);
 
     void outputv(ErlIOVec& ev);
 
-    virtual bool
+    void stop();
+
+    virtual void
     set_port(ErlDrvPort p);
 
     virtual void
     input_ready();
-
-protected:
-    UtpPort(int sock, DataDelivery del, long send_timeout);
-
-    void set_utp_callbacks(UTPSocket* utp);
-
-    virtual ErlDrvSSizeT
-    sockname(const char* buf, ErlDrvSizeT len, char** rbuf);
-
-    virtual ErlDrvSSizeT
-    peername(const char* buf, ErlDrvSizeT len, char** rbuf);
-
-    virtual ErlDrvSSizeT
-    close(const char* buf, ErlDrvSizeT len, char** rbuf);
-
-    virtual ErlDrvSSizeT
-    setopts(const char* buf, ErlDrvSizeT len, char** rbuf);
-
-    ErlDrvSSizeT cancel_send();
-
-    virtual void do_send_to(const byte* p, size_t len, const sockaddr* to,
-                            socklen_t slen) = 0;
-    virtual void do_read(const byte* bytes, size_t count) = 0;
-    virtual void do_write(byte* bytes, size_t count) = 0;
-    virtual size_t do_get_rb_size() = 0;
-    virtual void do_state_change(int state) = 0;
-    virtual void do_error(int errcode) = 0;
-    virtual void do_overhead(bool send, size_t count, int type) = 0;
-    virtual void do_incoming(UTPSocket* utp) = 0;
 
     static void send_to(void* data, const byte* p, size_t len,
                         const sockaddr* to, socklen_t slen);
@@ -91,16 +59,45 @@ protected:
     static void utp_overhead(void* data, bool send, size_t count, int type);
     static void utp_incoming(void* data, UTPSocket* utp);
 
-    enum PortStatus {
+protected:
+    UtpPort(int sock, DataDelivery del, long send_timeout);
+
+    void set_utp_callbacks(UTPSocket* utp);
+
+    virtual ErlDrvSSizeT
+    peername(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    virtual ErlDrvSSizeT
+    close(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    virtual ErlDrvSSizeT
+    setopts(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    ErlDrvSSizeT cancel_send();
+
+    void close_utp();
+
+    virtual void do_send_to(const byte* p, size_t len, const sockaddr* to,
+                            socklen_t slen);
+    virtual void do_read(const byte* bytes, size_t count);
+    virtual void do_write(byte* bytes, size_t count);
+    virtual size_t do_get_rb_size();
+    virtual void do_state_change(int state);
+    virtual void do_error(int errcode);
+    virtual void do_overhead(bool send, size_t count, int type);
+    virtual void do_incoming(UTPSocket* utp) = 0;
+
+    enum UtpPortStatus {
         not_connected,
         listening,
         connect_pending,
         connected,
         connect_failed,
-        closing
+        closing,
+        destroying,
+        stopped
     };
 
-    void send_not_connected() const;
     void demonitor();
 
     typedef std::list<ErlDrvTermData> WaitingWriters;
@@ -110,14 +107,13 @@ protected:
     Binary caller_ref;
     ErlDrvMutex* write_q_mutex;
     ErlDrvSSizeT send_tmout;
-    ErlDrvPort port;
     ErlDrvMonitor mon;
     ErlDrvPDL pdl;
     ErlDrvTermData caller;
     UTPSocket* utp;
-    PortStatus status;
-    DataDelivery delivery_type;
-    int udp_sock, state, error_code;
+    UtpPortStatus status;
+    DataDelivery data_delivery;
+    int state, error_code;
     bool writable, mon_valid;
 };
 

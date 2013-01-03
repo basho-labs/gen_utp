@@ -21,11 +21,10 @@
 // -------------------------------------------------------------------
 
 #include <unistd.h>
-#include <netinet/in.h>
-#include <fcntl.h>
 #include "utils.h"
 #include "coder.h"
 #include "globals.h"
+#include "main_port.h"
 #include "utp_port.h"
 
 
@@ -33,156 +32,14 @@ using namespace UtpDrv;
 
 const UtpDrv::NoMemError UtpDrv::enomem_error;
 
-UtpDrv::SockAddr::SockAddr() : slen(sizeof addr)
-{
-    memset(&addr, 0, slen);
-}
-
-UtpDrv::SockAddr::SockAddr(const sockaddr& sa, socklen_t sl) : slen(sl)
-{
-    memcpy(&addr, &sa, slen);
-}
-
-UtpDrv::SockAddr::SockAddr(const char* addrstr, unsigned short port)
-{
-    from_addrport(addrstr, port);
-}
-
-UtpDrv::SockAddr::SockAddr(in_addr_t inaddr, unsigned short port)
-{
-    from_addrport(inaddr, port);
-}
-
-UtpDrv::SockAddr::SockAddr(const in6_addr& inaddr6, unsigned short port)
-{
-    from_addrport(inaddr6, port);
-}
-
-void
-UtpDrv::SockAddr::from_addrport(const char* addrstr, unsigned short port)
-{
-    memset(&addr, 0, sizeof addr);
-    sockaddr* sa = reinterpret_cast<sockaddr*>(&addr);
-    addrinfo hints;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = PF_UNSPEC;
-    hints.ai_protocol = IPPROTO_UDP;
-    hints.ai_flags = AI_NUMERICHOST;
-    addrinfo* ai;
-    if (getaddrinfo(addrstr, 0, &hints, &ai) != 0) {
-        throw BadSockAddr();
-    }
-    memcpy(sa, ai->ai_addr, ai->ai_addrlen);
-    slen = ai->ai_addrlen;
-    freeaddrinfo(ai);
-    if (sa->sa_family == AF_INET) {
-        sockaddr_in* sa_in = reinterpret_cast<sockaddr_in*>(sa);
-        sa_in->sin_port = htons(port);
-    } else if (sa->sa_family == AF_INET6) {
-        sockaddr_in6* sa_in6 = reinterpret_cast<sockaddr_in6*>(sa);
-        sa_in6->sin6_port = htons(port);
-    } else {
-        throw BadSockAddr();
-    }
-}
-
-void
-UtpDrv::SockAddr::from_addrport(in_addr_t inaddr, unsigned short port)
-{
-    memset(&addr, 0, sizeof addr);
-    sockaddr_in* sa_in = reinterpret_cast<sockaddr_in*>(&addr);
-    sa_in->sin_family = AF_INET;
-    sa_in->sin_addr.s_addr = inaddr;
-    sa_in->sin_port = htons(port);
-    slen = sizeof(sockaddr_in);
-}
-
-void
-UtpDrv::SockAddr::from_addrport(const in6_addr& inaddr6, unsigned short port)
-{
-    memset(&addr, 0, sizeof addr);
-    sockaddr_in6* sa_in6 = reinterpret_cast<sockaddr_in6*>(&addr);
-    sa_in6->sin6_family = AF_INET6;
-    sa_in6->sin6_addr = inaddr6;
-    sa_in6->sin6_port = htons(port);
-    slen = sizeof(sockaddr_in);
-}
-
-void
-UtpDrv::SockAddr::to_addrport(char* addrstr, size_t addrlen,
-                              unsigned short& port) const
-{
-    const sockaddr* sa = reinterpret_cast<const sockaddr*>(&addr);
-    if (getnameinfo(sa, slen, addrstr, addrlen, 0, 0, NI_NUMERICHOST) != 0) {
-        throw BadSockAddr();
-    }
-    if (sa->sa_family == AF_INET) {
-        const sockaddr_in* sa_in = reinterpret_cast<const sockaddr_in*>(sa);
-        port = ntohs(sa_in->sin_port);
-    } else if (sa->sa_family == AF_INET6) {
-        const sockaddr_in6* sa_in6 = reinterpret_cast<const sockaddr_in6*>(sa);
-        port = ntohs(sa_in6->sin6_port);
-    } else {
-        throw BadSockAddr();
-    }
-}
-
-int
-UtpDrv::SockAddr::family() const
-{
-    const sockaddr* sa = reinterpret_cast<const sockaddr*>(&addr);
-    return sa->sa_family;
-}
-
 ErlDrvSSizeT
-UtpDrv::SockAddr::encode(char** rbuf) const
-{
-    char addrstr[INET6_ADDRSTRLEN];
-    unsigned short port;
-    try {
-        to_addrport(addrstr, sizeof addrstr, port);
-    } catch (const BadSockAddr&) {
-        return encode_error(rbuf, errno);
-    }
-    EiEncoder encoder;
-    encoder.tuple_header(2).atom("ok");
-    encoder.tuple_header(2).string(addrstr).ulong(port);
-    ErlDrvSSizeT size;
-    *rbuf = reinterpret_cast<char*>(encoder.copy_to_binary(size));
-    return size;
-}
-
-bool
-UtpDrv::SockAddr::operator<(const SockAddr& sa) const
-{
-    if (addr.ss_family == sa.addr.ss_family) {
-        return memcmp(&addr, &sa, slen) < 0;
-    } else {
-        return addr.ss_family < sa.addr.ss_family;
-    }
-}
-
-UtpDrv::SockAddr::operator sockaddr*()
-{
-    return reinterpret_cast<sockaddr*>(&addr);
-}
-
-UtpDrv::SockAddr::operator const sockaddr*() const
-{
-    return reinterpret_cast<const sockaddr*>(&addr);
-}
-
-//--------------------------------------------------------------------
-
-ErlDrvSSizeT
-UtpDrv::encode_atom(char** rbuf, const char* atom)
+UtpDrv::encode_atom(char** rbuf, ErlDrvSizeT rlen, const char* atom)
 {
     EiEncoder encoder;
     try {
         encoder.atom(atom);
-        ErlDrvSSizeT size;
-        *rbuf = reinterpret_cast<char*>(encoder.copy_to_binary(size));
-        return size;
+        ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+        return encoder.copy_to_binary(binptr, rlen);
     } catch (std::exception&) {
         memcpy(*rbuf, enomem_error.buffer(), enomem_error.size());
         return enomem_error.size();
@@ -190,14 +47,13 @@ UtpDrv::encode_atom(char** rbuf, const char* atom)
 }
 
 ErlDrvSSizeT
-UtpDrv::encode_error(char** rbuf, const char* error)
+UtpDrv::encode_error(char** rbuf, ErlDrvSizeT rlen, const char* error)
 {
     EiEncoder encoder;
     try {
         encoder.tuple_header(2).atom("error").atom(error);
-        ErlDrvSSizeT size;
-        *rbuf = reinterpret_cast<char*>(encoder.copy_to_binary(size));
-        return size;
+        ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+        return encoder.copy_to_binary(binptr, rlen);
     } catch (std::exception&) {
         memcpy(*rbuf, enomem_error.buffer(), enomem_error.size());
         return enomem_error.size();
@@ -205,53 +61,38 @@ UtpDrv::encode_error(char** rbuf, const char* error)
 }
 
 ErlDrvSSizeT
-UtpDrv::encode_error(char** rbuf, int error)
+UtpDrv::encode_error(char** rbuf, ErlDrvSizeT rlen, int error)
 {
-    return encode_error(rbuf, erl_errno_id(error));
-}
-
-//--------------------------------------------------------------------
-
-int
-UtpDrv::open_udp_socket(int& udp_sock, unsigned short port)
-{
-    SockAddr addr(INADDR_ANY, port);
-    return open_udp_socket(udp_sock, addr);
-}
-
-int
-UtpDrv::open_udp_socket(int& udp_sock, const SockAddr& addr)
-{
-    int family = addr.family();
-    if ((udp_sock = socket(family, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-        return errno;
-    }
-    int flags = fcntl(udp_sock, F_GETFL);
-    if (fcntl(udp_sock, F_SETFL, flags|O_NONBLOCK) < 0) {
-        ::close(udp_sock);
-        return errno;
-    }
-    if (bind(udp_sock, addr, addr.slen) < 0) {
-        ::close(udp_sock);
-        return errno;
-    }
-    return 0;
+    return encode_error(rbuf, rlen, erl_errno_id(error));
 }
 
 ErlDrvPort
-UtpDrv::create_port(ErlDrvTermData owner, UtpPort* p)
+UtpDrv::create_port(ErlDrvTermData owner, SocketHandler* h)
 {
-    ErlDrvData port_drv_data = reinterpret_cast<ErlDrvData>(p);
-    ErlDrvPort new_port = driver_create_port(main_port->drv_port(), owner,
+    ErlDrvData port_drv_data = reinterpret_cast<ErlDrvData>(h);
+    ErlDrvPort new_port = driver_create_port(MainPort::drv_port(), owner,
                                              drv_name, port_drv_data);
     return new_port;
 }
 
-//--------------------------------------------------------------------
+void
+UtpDrv::send_not_connected(ErlDrvPort port)
+{
+    ErlDrvTermData caller = driver_caller(port);
+    ErlDrvTermData term[] = {
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_reply")),
+        ERL_DRV_PORT, driver_mk_port(port),
+        ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
+        ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(ENOTCONN)),
+        ERL_DRV_TUPLE, 2,
+        ERL_DRV_TUPLE, 3,
+    };
+    driver_send_term(port, caller, term, sizeof term/sizeof *term);
+}
 
 UtpDrv::NoMemError::NoMemError() : bin(0)
 {
-    encode_error(reinterpret_cast<char**>(&bin), ENOMEM);
+    encode_error(reinterpret_cast<char**>(&bin), 0, ENOMEM);
 }
 
 UtpDrv::NoMemError::~NoMemError()

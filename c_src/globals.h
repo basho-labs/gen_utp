@@ -23,11 +23,12 @@
 //
 // -------------------------------------------------------------------
 
-#include "main_port.h"
+#include "erl_driver.h"
 
 
 #define UTPDRV_DEBUG 0
 #if UTPDRV_DEBUG
+#include <cstdio>
 #define UTPDRV_TRACE(str) fputs(str, stderr)
 #else
 #define UTPDRV_TRACE(str)
@@ -38,8 +39,6 @@ namespace UtpDrv {
 const int INVALID_SOCKET = -1;
 
 extern char* drv_name;
-
-extern MainPort* main_port;
 
 extern ErlDrvMutex* utp_mutex;
 extern ErlDrvMutex* drv_mutex;

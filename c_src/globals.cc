@@ -28,7 +28,5 @@ using namespace UtpDrv;
 // non-const due to Erlang driver function requirements
 char* UtpDrv::drv_name = const_cast<char*>("utpdrv");
 
-UtpDrv::MainPort* UtpDrv::main_port = 0;
-
 ErlDrvMutex* UtpDrv::utp_mutex = 0;
 ErlDrvMutex* UtpDrv::drv_mutex = 0;

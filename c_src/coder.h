@@ -47,7 +47,8 @@ public:
 
     const char* buffer(int& len) const;
 
-    ErlDrvBinary* copy_to_binary(ErlDrvSSizeT& size) const;
+    ErlDrvSSizeT
+    copy_to_binary(ErlDrvBinary** binptr, ErlDrvSizeT rlen) const;
 
 private:
     // prevent copies

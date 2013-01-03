@@ -53,15 +53,18 @@ public:
     void outputv(ErlIOVec& ev);
     void process_exit(ErlDrvMonitor* monitor);
 
-    ErlDrvPort drv_port() const;
+    static ErlDrvPort drv_port();
 
-    void deselect(int fd) const;
+    static void start_input(int fd, SocketHandler* handler);
+    static void stop_input(int& fd);
 
     static void add_monitor(const ErlDrvMonitor& mon, Handler* h);
     static void del_monitor(ErlDrvPort port, ErlDrvMonitor& mon);
 
 private:
-    ErlDrvPort port;
+    // singleton
+    static MainPort* main_port;
+
     ErlDrvTermData owner;
 
     struct MonCompare {
@@ -71,35 +74,12 @@ private:
         }
     };
 
-    enum {
-        UTP_IP = 1,
-        UTP_FD,
-        UTP_PORT,
-        UTP_LIST,
-        UTP_BINARY,
-        UTP_INET,
-        UTP_INET6,
-        UTP_SEND_TMOUT
-    };
+    ErlDrvMutex* map_mutex;
 
-    struct SockOpts {
-        SockOpts();
-        SockAddr addr;
-        char addrstr[INET6_ADDRSTRLEN];
-        long send_tmout;
-        int fd;
-        unsigned short port;
-        UtpPort::DataDelivery delivery;
-        bool inet6;
-        bool addr_set;
-    };
-    void decode_sock_opts(const Binary& opts, SockOpts&);
-
-    static ErlDrvMutex* map_mutex;
-    typedef std::map<int, UtpPort*> FdMap;
-    static FdMap fdmap;
+    typedef std::map<int, SocketHandler*> FdMap;
+    FdMap fdmap;
     typedef std::map<ErlDrvMonitor, Handler*, MonCompare> MonMap;
-    static MonMap monmap;
+    MonMap monmap;
 
     ErlDrvSSizeT
     connect_start(const char* buf, ErlDrvSizeT len,
@@ -107,6 +87,12 @@ private:
 
     ErlDrvSSizeT
     listen(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    void select(int fd, SocketHandler* handler);
+    void deselect(int& fd);
+
+    void add_mon(const ErlDrvMonitor& mon, Handler* h);
+    void del_mon(ErlDrvPort port, ErlDrvMonitor& mon);
 
     // prevent copies
     MainPort(const MainPort&);

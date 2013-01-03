@@ -81,16 +81,25 @@ UtpDrv::EiEncoder::buffer(int& len) const
     return buff;
 }
 
-ErlDrvBinary*
-UtpDrv::EiEncoder::copy_to_binary(ErlDrvSSizeT& size) const
+ErlDrvSSizeT
+UtpDrv::EiEncoder::copy_to_binary(ErlDrvBinary** binp, ErlDrvSizeT rlen) const
 {
-    size = index+1;
-    ErlDrvBinary* result = driver_alloc_binary(size);
-    if (result == 0) {
-        throw std::bad_alloc();
+    ErlDrvSSizeT size = index+1;
+    if (size > ErlDrvSSizeT(rlen)) {
+        // We do not free *binp here because we assume the pointer-to-binary
+        // passed in follows the rules of the rbuf argument to the Erlang
+        // driver control and call entry point functions. If we reallocate
+        // the binary as below, the Erlang runtime takes care of freeing it.
+        *binp = driver_alloc_binary(size);
+        if (*binp == 0) {
+            throw std::bad_alloc();
+        }
+        memcpy((*binp)->orig_bytes, buff, size);
+    } else {
+        char** p = reinterpret_cast<char**>(binp);
+        memcpy(*p, buff, size);
     }
-    memcpy(result->orig_bytes, buff, size);
-    return result;
+    return size;
 }
 
 //--------------------------------------------------------------------

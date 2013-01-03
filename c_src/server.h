@@ -34,32 +34,16 @@ class Listener;
 class Server : public UtpPort
 {
 public:
-    Server(Listener& lr, UTPSocket* utp, DataDelivery del, long send_timeout);
+    Server(int sock, DataDelivery del, long send_timeout);
     ~Server();
 
     ErlDrvSSizeT
     control(unsigned command, const char* buf, ErlDrvSizeT len,
             char** rbuf, ErlDrvSizeT rlen);
 
-    void stop();
-
-    void incoming();
-
-    void force_close();
-
 private:
-    Listener& listener;
-
-    ErlDrvSSizeT close(const char* buf, ErlDrvSizeT len, char** rbuf);
-
     void do_send_to(const byte* p, size_t len, const sockaddr* to,
                     socklen_t slen);
-    void do_read(const byte* bytes, size_t count);
-    void do_write(byte* bytes, size_t count);
-    size_t do_get_rb_size();
-    void do_state_change(int state);
-    void do_error(int errcode);
-    void do_overhead(bool send, size_t count, int type);
     void do_incoming(UTPSocket* utp);
 
     // prevent copies

@@ -20,8 +20,10 @@
 //
 // -------------------------------------------------------------------
 
+#include <unistd.h>
 #include "listener.h"
 #include "globals.h"
+#include "main_port.h"
 #include "utils.h"
 #include "locker.h"
 #include "server.h"
@@ -30,16 +32,17 @@
 using namespace UtpDrv;
 
 UtpDrv::Listener::Listener(int sock, DataDelivery del, long send_timeout) :
-    UtpPort(sock, del, send_timeout)
+    SocketHandler(sock), data_delivery(del), send_tmout(send_timeout)
 {
     UTPDRV_TRACE("Listener::Listener\r\n");
-    sm_mutex = erl_drv_mutex_create(const_cast<char*>("listener"));
+    if (getsockname(udp_sock, my_addr, &my_addr.slen) < 0) {
+        throw SocketFailure(errno);
+    }
 }
 
 UtpDrv::Listener::~Listener()
 {
     UTPDRV_TRACE("Listener::~Listener\r\n");
-    erl_drv_mutex_destroy(sm_mutex);
 }
 
 ErlDrvSSizeT
@@ -49,11 +52,11 @@ UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
     UTPDRV_TRACE("Listener::control\r\n");
     switch (command) {
     case UTP_CLOSE:
-        return close(buf, len, rbuf);
+        return close(buf, len, rbuf, rlen);
     case UTP_SOCKNAME:
-        return UtpPort::sockname(buf, len, rbuf);
+        return sockname(buf, len, rbuf, rlen);
     case UTP_PEERNAME:
-        return peername(buf, len, rbuf);
+        return peername(buf, len, rbuf, rlen);
     }
     return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
 }
@@ -61,97 +64,66 @@ UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::Listener::outputv(ErlIOVec&)
 {
-    send_not_connected();
+    UTPDRV_TRACE("Listener::outputv\r\n");
+    send_not_connected(port);
 }
 
 void
 UtpDrv::Listener::stop()
 {
     UTPDRV_TRACE("Listener::stop\r\n");
-    if (main_port) {
-        main_port->deselect(udp_sock);
-    }
+    MainPort::stop_input(udp_sock);
+    delete this;
 }
 
 void
-UtpDrv::Listener::do_send_to(const byte* p, size_t len,
-                             const sockaddr* to, socklen_t slen)
+UtpDrv::Listener::process_exit(ErlDrvMonitor* mon)
 {
-    UTPDRV_TRACE("Listener::do_send_to\r\n");
-    UtpPort::do_send_to(p, len, to, slen);
+    UTPDRV_TRACE("Listener::process_exit\r\n");
 }
 
 void
-UtpDrv::Listener::do_read(const byte* bytes, size_t count)
+UtpDrv::Listener::input_ready()
 {
-    UTPDRV_TRACE("Listener::do_read\r\n");
-    UtpPort::do_read(bytes, count);
-}
-
-void
-UtpDrv::Listener::do_write(byte* bytes, size_t count)
-{
-    UTPDRV_TRACE("Listener::do_write\r\n");
-    // do nothing
-}
-
-size_t
-UtpDrv::Listener::do_get_rb_size()
-{
-    UTPDRV_TRACE("Listener::do_get_rb_size\r\n");
-    return UtpPort::do_get_rb_size();
-}
-
-void
-UtpDrv::Listener::do_state_change(int s)
-{
-    UTPDRV_TRACE("Listener::do_state_change\r\n");
-    UtpPort::do_state_change(s);
-}
-
-void
-UtpDrv::Listener::do_error(int errcode)
-{
-    UTPDRV_TRACE("Listener::do_error\r\n");
-}
-
-void
-UtpDrv::Listener::do_overhead(bool send, size_t count, int type)
-{
-    UtpPort::do_overhead(send, count, type);
-}
-
-void
-UtpDrv::Listener::do_incoming(UTPSocket* utp)
-{
-    UTPDRV_TRACE("Listener::do_incoming\r\n");
-    SockAddr addr;
-    UTP_GetPeerName(utp, addr, &addr.slen);
-    AddrMap::iterator it;
-    {
-        MutexLocker lock(sm_mutex);
-        it = addrs.find(addr);
-        if (it == addrs.end()) {
-            Server* server = new Server(*this, utp, delivery_type, send_tmout);
-            AddrMap::value_type aval(addr, server);
-            std::pair<AddrMap::iterator, bool> p = addrs.insert(aval);
-            it = p.first;
-            ServerMap::value_type sval(server, addr);
-            servers.insert(sval);
-            ErlDrvTermData owner = driver_connected(port);
-            ErlDrvPort new_port = create_port(owner, server);
-            if (!server->set_port(new_port)) {
-                driver_failure_atom(new_port,
-                                    const_cast<char*>("port_data_lock_failed"));
-                addrs.erase(addr);
+    UTPDRV_TRACE("Listener::input_ready\r\n");
+    // TODO: when recv buffer sizes can be varied, the following buffer will
+    // need to come from a pool
+    byte buf[8192];
+    SockAddr from;
+    int len = recvfrom(udp_sock, buf, sizeof buf, 0, from, &from.slen);
+    if (len > 0) {
+        int sock;
+        if (open_udp_socket(sock, my_addr, true) < 0) {
+            return;
+        }
+        for (;;) {
+            int res = connect(sock, from, from.slen);
+            if (res == 0) {
+                break;
+            } else if (res < 0 && res != EINTR) {
+                ::close(sock);
                 return;
             }
+        }
+        Server* server = new Server(sock, data_delivery, send_tmout);
+        bool is_utp;
+        {
+            MutexLocker lock(utp_mutex);
+            is_utp = UTP_IsIncomingUTP(&UtpPort::utp_incoming,
+                                       &UtpPort::send_to, server,
+                                       buf, len, from, from.slen);
+        }
+        if (is_utp) {
+            ErlDrvTermData owner = driver_connected(port);
+            ErlDrvPort new_port = create_port(owner, server);
+            server->set_port(new_port);
+            MainPort::start_input(sock, server);
             ErlDrvTermData term[sizeof(in6_addr) + 12] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
                 ERL_DRV_PORT, driver_mk_port(new_port),
             };
             int j = 4;
-            sockaddr* sa = reinterpret_cast<sockaddr*>(&addr.addr);
+            sockaddr* sa = from;
             unsigned short addrport;
             int addr_tuple_size;
             if (sa->sa_family == AF_INET) {
@@ -184,32 +156,40 @@ UtpDrv::Listener::do_incoming(UTPSocket* utp)
             int term_size = 2*addr_tuple_size + 12;
             MutexLocker lock(drv_mutex);
             driver_output_term(port, term, term_size);
+        } else {
+            delete server;
         }
     }
-    it->second->incoming();
-}
-
-ErlDrvSSizeT
-UtpDrv::Listener::peername(const char* buf, ErlDrvSizeT len, char** rbuf)
-{
-    UTPDRV_TRACE("Listener::peername\r\n");
-    return encode_error(rbuf, ENOTCONN);
 }
 
 void
-UtpDrv::Listener::server_closing(Server* svr)
+UtpDrv::Listener::do_write(byte* bytes, size_t count)
 {
-    MutexLocker lock(sm_mutex);
-    ServerMap::iterator it = servers.find(svr);
-    if (it != servers.end()) {
-        addrs.erase(it->second);
-        servers.erase(svr);
-    }
+    UTPDRV_TRACE("Listener::do_write\r\n");
+    // do nothing
+}
+
+void
+UtpDrv::Listener::do_incoming(UTPSocket* utp)
+{
+    UTPDRV_TRACE("Listener::do_incoming\r\n");
 }
 
 ErlDrvSSizeT
-UtpDrv::Listener::close(const char* buf, ErlDrvSizeT len, char** rbuf)
+UtpDrv::Listener::close(const char* buf, ErlDrvSizeT len,
+                        char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("Listener::close\r\n");
-    return UtpPort::close(buf, len, rbuf);
+    const char* retval = "ok";
+    EiEncoder encoder;
+    encoder.atom(retval);
+    ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+    return encoder.copy_to_binary(binptr, rlen);
+}
+
+ErlDrvSSizeT
+UtpDrv::Listener::peername(const char* buf, ErlDrvSizeT len,
+                           char** rbuf, ErlDrvSizeT rlen)
+{
+    UTPDRV_TRACE("Listener::peername\r\n");
+    return encode_error(rbuf, rlen, ENOTCONN);
 }

@@ -21,12 +21,24 @@
 // -------------------------------------------------------------------
 
 #include "handler.h"
+#include "globals.h"
 
 
 using namespace UtpDrv;
 
 UtpDrv::Handler::~Handler()
-{}
+{
+    port = 0;
+}
+
+void
+UtpDrv::Handler::set_port(ErlDrvPort p)
+{
+    UTPDRV_TRACE("Handler::set_port\r\n");
+    port = p;
+    set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
+    port_status = port_started;
+}
 
 void*
 UtpDrv::Handler::operator new(size_t s)

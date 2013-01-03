@@ -31,35 +31,30 @@ UtpDrv::Binary::Binary() : bin(0)
 UtpDrv::Binary::Binary(const Binary& b)
 {
     if (b.bin != 0) {
-        bin = driver_alloc_binary(b.bin->orig_size);
-        memcpy(bin->orig_bytes, b.bin->orig_bytes, bin->orig_size);
+        bin = b.bin;
+        driver_binary_inc_refc(bin);
     } else {
         bin = 0;
     }
 }
 
 UtpDrv::Binary::Binary(ErlDrvBinary* b) : bin(b)
-{}
+{
+}
 
 UtpDrv::Binary::~Binary()
 {
-    if (bin != 0) {
-        driver_free_binary(bin);
-    }
+    reset();
 }
 
 UtpDrv::Binary&
 UtpDrv::Binary::operator=(const Binary& b)
 {
     if (&b != this) {
-        if (bin != 0) {
-            driver_free_binary(bin);
-        }
+        reset();
         if (b.bin != 0) {
-            bin = driver_alloc_binary(b.bin->orig_size);
-            memcpy(bin->orig_bytes, b.bin->orig_bytes, b.bin->orig_size);
-        } else {
-            bin = 0;
+            bin = b.bin;
+            driver_binary_inc_refc(bin);
         }
     }
     return *this;
@@ -68,6 +63,7 @@ UtpDrv::Binary::operator=(const Binary& b)
 void
 UtpDrv::Binary::alloc(size_t size)
 {
+    reset();
     bin = driver_alloc_binary(size);
 }
 

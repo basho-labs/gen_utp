@@ -53,7 +53,6 @@ utp_stop(ErlDrvData drv_data)
 {
     Handler* drv = reinterpret_cast<Handler*>(drv_data);
     drv->stop();
-    delete drv;
 }
 
 static void

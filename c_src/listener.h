@@ -23,8 +23,7 @@
 //
 // -------------------------------------------------------------------
 
-#include <map>
-#include "utp_port.h"
+#include "socket_handler.h"
 #include "utils.h"
 #include "libutp/utp.h"
 
@@ -33,10 +32,8 @@ namespace UtpDrv {
 
 class Server;
 
-class Listener : public UtpPort
+class Listener : public SocketHandler
 {
-    friend class Server;
-
 public:
     Listener(int sock, DataDelivery del, long send_timeout);
     ~Listener();
@@ -49,29 +46,23 @@ public:
 
     void stop();
 
-    void
-    server_closing(Server* svr);
+    void process_exit(ErlDrvMonitor* monitor);
+
+    void input_ready();
 
 protected:
-    ErlDrvSSizeT peername(const char* buf, ErlDrvSizeT len, char** rbuf);
+    ErlDrvSSizeT close(const char* buf, ErlDrvSizeT len,
+                       char** rbuf, ErlDrvSizeT rlen);
+
+    ErlDrvSSizeT peername(const char* buf, ErlDrvSizeT len,
+                          char** rbuf, ErlDrvSizeT rlen);
 
 private:
-    ErlDrvSSizeT close(const char* buf, ErlDrvSizeT len, char** rbuf);
+    SockAddr my_addr;
+    DataDelivery data_delivery;
+    ErlDrvSSizeT send_tmout;
 
-    typedef std::map<SockAddr, Server*> AddrMap;
-    typedef std::map<Server*, SockAddr> ServerMap;
-    AddrMap addrs;
-    ServerMap servers;
-    ErlDrvMutex* sm_mutex;
-
-    void do_send_to(const byte* p, size_t len, const sockaddr* to,
-                    socklen_t slen);
-    void do_read(const byte* bytes, size_t count);
     void do_write(byte* bytes, size_t count);
-    size_t do_get_rb_size();
-    void do_state_change(int state);
-    void do_error(int errcode);
-    void do_overhead(bool send, size_t count, int type);
     void do_incoming(UTPSocket* utp);
 
     // prevent copies

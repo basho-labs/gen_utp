@@ -42,6 +42,11 @@ enum Commands {
     UTP_CANCEL_SEND
 };
 
+// Type for delivery of data from a port back to Erlang: binary or list
+enum DataDelivery {
+    DATA_LIST,
+    DATA_BINARY
+};
 
 class Handler
 {
@@ -56,13 +61,26 @@ public:
     outputv(ErlIOVec& ev) = 0;
 
     virtual void stop() = 0;
+
     virtual void process_exit(ErlDrvMonitor* monitor) = 0;
+
+    virtual void set_port(ErlDrvPort p);
 
     void* operator new(size_t s);
     void operator delete(void* p);
 
 protected:
-    Handler() {}
+    Handler() : port(0), port_status(port_not_started) {}
+    explicit Handler(ErlDrvPort p) : port(p), port_status(port_started) {}
+
+    enum PortStatus {
+        port_not_started,
+        port_started,
+        port_stopped
+    };
+
+    ErlDrvPort port;
+    PortStatus port_status;
 };
 
 }
