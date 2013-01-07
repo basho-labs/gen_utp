@@ -2,7 +2,7 @@
 %%
 %% gen_utp: uTP protocol
 %%
-%% Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -32,9 +32,10 @@
 -export([start_link/0, start/0, stop/0,
          listen/1, listen/2,
          connect/2, connect/3,
-         close/1, send/2,
+         close/1, send/2, recv/2, recv/3,
          sockname/1, peername/1,
-         setopts/2, controlling_process/2]).
+         setopts/2, getopts/2,
+         controlling_process/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -50,23 +51,17 @@
 -define(UTP_SOCKNAME, 5).
 -define(UTP_PEERNAME, 6).
 -define(UTP_SETOPTS, 7).
--define(UTP_CANCEL_SEND, 8).
-
-%% IDs for binary-encoded options
--define(UTP_IP, 1).
--define(UTP_FD, 2).
--define(UTP_PORT, 3).
--define(UTP_LIST, 4).
--define(UTP_BINARY, 5).
--define(UTP_INET, 6).
--define(UTP_INET6, 7).
--define(UTP_SEND_TMOUT, 8).
+-define(UTP_GETOPTS, 8).
+-define(UTP_CANCEL_SEND, 9).
+-define(UTP_RECV, 10).
+-define(UTP_CANCEL_RECV, 11).
 
 -type utpstate() :: #state{}.
 -type from() :: {pid(), any()}.
 -type utpaddr() :: inet:ip_address() | inet:hostname().
 -type utpport() :: inet:port_number().
 -type utpsock() :: port().
+-type utpdata() :: binary() | list().
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
@@ -88,12 +83,6 @@ listen(Port) when Port >= 0, Port < 65536 ->
                                                    {error, any()}.
 listen(Port, Options) when Port >= 0, Port < 65536 ->
     ValidOpts = gen_utp_opts:validate([{port,Port}|Options]),
-    case ValidOpts#utp_options.send_tmout of
-        undefined ->
-            ok;
-        _ ->
-            erlang:error(badarg)
-    end,
     OptBin = options_to_binary(ValidOpts),
     try
         Ref = make_ref(),
@@ -180,6 +169,44 @@ close(Sock) ->
 send(Sock, Data) ->
     send(Sock, Data, os:timestamp()).
 
+-spec recv(utpsock(), non_neg_integer()) -> {ok, utpdata()} |
+                                            {error, any()}.
+recv(Sock, Length) ->
+    recv(Sock, Length, infinity).
+
+-spec recv(utpsock(), non_neg_integer(), timeout()) -> {ok, utpdata()} |
+                                                       {error, any()}.
+recv(Sock, Length, Timeout) ->
+    try
+        Ref = make_ref(),
+        Args = term_to_binary({Length, term_to_binary(Ref)}),
+        Result = erlang:port_control(Sock, ?UTP_RECV, Args),
+        case binary_to_term(Result) of
+            wait ->
+                receive
+                    {Ref, Reply} ->
+                        Reply
+                after
+                    Timeout ->
+                        erlang:port_control(Sock,?UTP_CANCEL_RECV,<<>>),
+                        %% if the reply comes back while the cancel
+                        %% call completes, return it
+                        receive
+                            {Ref, Reply} ->
+                                Reply
+                        after
+                            0 ->
+                                {error, etimedout}
+                        end
+                end;
+            Reply ->
+                Reply
+        end
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
+
 -spec sockname(utpsock()) -> {ok, {utpaddr(), utpport()}} | {error, any()}.
 sockname(Sock) ->
     Result = erlang:port_control(Sock, ?UTP_SOCKNAME, <<>>),
@@ -214,8 +241,21 @@ setopts(Sock, Opts) when is_list(Opts) ->
             erlang:error(badarg, Opts);
         false ->
             OptBin = options_to_binary(ValidOpts),
-            Result = erlang:port_control(Sock, ?UTP_SETOPTS, OptBin),
+            Args = term_to_binary(OptBin),
+            Result = erlang:port_control(Sock, ?UTP_SETOPTS, Args),
             binary_to_term(Result)
+    end.
+
+-spec getopts(utpsock(), gen_utp_opts:utpgetoptnames()) ->
+                     {ok, gen_utp_opts:utpopts()} | {error, any()}.
+getopts(Sock, OptNames) when is_list(OptNames) ->
+    case gen_utp_opts:validate_names(OptNames) of
+        {ok, OptNameBin} ->
+            Args = term_to_binary(OptNameBin),
+            Result = erlang:port_control(Sock, ?UTP_GETOPTS, Args),
+            binary_to_term(Result);
+        Error ->
+            Error
     end.
 
 -spec controlling_process(utpsock(), pid()) -> ok | {error, any()}.
@@ -283,9 +323,14 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(any(), utpstate()) -> {noreply, utpstate()}.
-handle_info({timer, {TS1, TUS1}, {TS2, TUS2}}, State) ->
-    Time = (((TS2*1000000)+TUS2)-((TS1*1000000)+TUS1))/1000000,
-    io:format("10000 cycles of the driver timer: ~w~n", [Time]),
+handle_info({close, DrvPort}, State) ->
+    try
+        io:format("**** closing port ~p~n", [DrvPort]),
+        erlang:port_close(DrvPort)
+    catch
+        _:_ ->
+            ok
+    end,
     {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -344,8 +389,8 @@ send(Sock, Data, Start) ->
                         after
                             Wait ->
                                 erlang:port_control(Sock,?UTP_CANCEL_SEND,<<>>),
-                                %% if the reply came back right at the tail
-                                %% end of the receive, return it
+                                %% if the reply comes back while the cancel
+                                %% call completes, return it
                                 receive
                                     {utp_reply, Sock, ok} ->
                                         ok;
@@ -389,21 +434,21 @@ validate_connect(Sock) ->
 -spec options_to_binary(#utp_options{}) -> binary().
 options_to_binary(UtpOpts) ->
     list_to_binary([
-                    case UtpOpts#utp_options.delivery of
-                        binary ->
-                            <<?UTP_BINARY:8>>;
-                        list ->
-                            <<?UTP_LIST:8>>;
+                    case UtpOpts#utp_options.mode of
                         undefined ->
-                            <<>>
+                            <<>>;
+                        list ->
+                            <<>>;
+                        binary ->
+                            <<?UTP_BINARY:8>>
                     end,
                     case UtpOpts#utp_options.family of
-                        inet ->
-                            <<?UTP_INET:8>>;
-                        inet6 ->
-                            <<?UTP_INET6:8>>;
                         undefined ->
-                            <<>>
+                            <<>>;
+                        inet ->
+                            <<>>;
+                        inet6 ->
+                            <<?UTP_INET6:8>>
                     end,
                     case UtpOpts#utp_options.ip of
                         undefined ->
@@ -430,6 +475,16 @@ options_to_binary(UtpOpts) ->
                             <<>>;
                         Tm ->
                             <<?UTP_SEND_TMOUT:8, Tm:32/big>>
+                    end,
+                    case UtpOpts#utp_options.active of
+                        undefined ->
+                            <<>>;
+                        false ->
+                            <<>>;
+                        once ->
+                            <<?UTP_ACTIVE:8, ?UTP_ACTIVE_ONCE:8>>;
+                        true ->
+                            <<?UTP_ACTIVE:8, ?UTP_ACTIVE_TRUE:8>>
                     end
                    ]).
 
@@ -608,7 +663,8 @@ client_server_test_() ->
      end}.
 
 simple_connect_server(Client, Ref) ->
-    {ok, LSock} = gen_utp:listen(0),
+    Opts = [{active,true}, {mode,binary}],
+    {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     receive
         {utp_async, Sock, {Addr, Port}} ->
@@ -626,7 +682,8 @@ simple_connect_server(Client, Ref) ->
 simple_connect_client(Ref) ->
     receive
         {ok, {_, LPort}} ->
-            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
+            Opts = [{active,true}, {mode,binary}],
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, Opts),
             true = erlang:is_port(Sock),
             Self = self(),
             {connected, Self} = erlang:port_info(Sock, connected),
@@ -642,7 +699,8 @@ simple_connect_client(Ref) ->
     ok.
 
 simple_send_server(Client, Ref) ->
-    {ok, LSock} = gen_utp:listen(0),
+    Opts = [{active,true}, {mode,binary}],
+    {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     receive
         {utp_async, Sock, {_Addr, _Port}} ->
@@ -665,7 +723,8 @@ simple_send_server(Client, Ref) ->
 simple_send_client(Ref, Mode) ->
     receive
         {ok, {_, LPort}} ->
-            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, [Mode]),
+            Opts = [Mode,{active,true}],
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, Opts),
             ok = gen_utp:send(Sock, <<"simple send client">>),
             receive
                 {utp, Sock, Reply} ->
@@ -690,7 +749,8 @@ simple_send_client(Ref, Mode) ->
     ok.
 
 two_client_server(Client, Ref) ->
-    {ok, LSock} = gen_utp:listen(0),
+    Opts = [{active,true}, {mode,binary}],
+    {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     receive
         {utp_async, Sock1, {_Addr1, _Port1}} ->
@@ -727,9 +787,10 @@ two_client_server(Client, Ref) ->
 two_clients(Ref) ->
     receive
         {ok, {_, LPort}} ->
-            {ok, Sock1} = gen_utp:connect("127.0.0.1", LPort),
+            Opts = [{active,true}, {mode,binary}],
+            {ok, Sock1} = gen_utp:connect("127.0.0.1", LPort, Opts),
             ok = gen_utp:send(Sock1, <<"client1">>),
-            {ok, Sock2} = gen_utp:connect("127.0.0.1", LPort),
+            {ok, Sock2} = gen_utp:connect("127.0.0.1", LPort, Opts),
             receive
                 {utp, Sock1, <<"client1">>} ->
                     ok = gen_utp:send(Sock2, <<"client2">>),
@@ -754,7 +815,8 @@ two_clients(Ref) ->
     ok.
 
 large_send_server(Client, Ref, Bin) ->
-    {ok, LSock} = gen_utp:listen(0),
+    Opts = [{active,true}, {mode,binary}],
+    {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     receive
         {utp_async, Sock, {_Addr, _Port}} ->
@@ -786,7 +848,8 @@ large_receive(Sock, Size, Count, Bin) ->
 large_send_client(Ref, Bin) ->
     receive
         {ok, {_, LPort}} ->
-            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort),
+            Opts = [{active,true},{mode,binary}],
+            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, Opts),
             ok = gen_utp:send(Sock, Bin),
             receive
                 {utp, Sock, Reply} ->
@@ -806,7 +869,7 @@ large_send_client(Ref, Bin) ->
     ok.
 
 two_servers(Client, Ref) ->
-    {ok, LSock} = gen_utp:listen(0),
+    {ok, LSock} = gen_utp:listen(0, [{active,true}]),
     {ok, Sockname} = gen_utp:sockname(LSock),
     Client ! {Ref, Sockname},
     Self = self(),
@@ -875,9 +938,10 @@ two_servers_do_server(Pid) ->
 two_server_client(Ref) ->
     receive
         {Ref, {_, LPort}} ->
-            {ok, Sock1} = gen_utp:connect("127.0.0.1", LPort),
+            Opts = [{active,true},{mode,binary}],
+            {ok, Sock1} = gen_utp:connect("127.0.0.1", LPort, Opts),
             Msg1 = list_to_binary(["two servers", term_to_binary(Ref)]),
-            {ok, Sock2} = gen_utp:connect("127.0.0.1", LPort),
+            {ok, Sock2} = gen_utp:connect("127.0.0.1", LPort, Opts),
             Msg2 = list_to_binary(lists:reverse(binary_to_list(Msg1))),
             receive
                 {Ref, send} ->

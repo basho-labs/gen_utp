@@ -5,7 +5,7 @@
 //
 // handler.h: abstract base class for driver handlers
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -39,11 +39,14 @@ enum Commands {
     UTP_SOCKNAME,
     UTP_PEERNAME,
     UTP_SETOPTS,
-    UTP_CANCEL_SEND
+    UTP_GETOPTS,
+    UTP_CANCEL_SEND,
+    UTP_RECV,
+    UTP_CANCEL_RECV
 };
 
 // Type for delivery of data from a port back to Erlang: binary or list
-enum DataDelivery {
+enum DeliveryMode {
     DATA_LIST,
     DATA_BINARY
 };
@@ -62,16 +65,14 @@ public:
 
     virtual void stop() = 0;
 
-    virtual void process_exit(ErlDrvMonitor* monitor) = 0;
-
     virtual void set_port(ErlDrvPort p);
 
     void* operator new(size_t s);
     void operator delete(void* p);
 
 protected:
-    Handler() : port(0), port_status(port_not_started) {}
-    explicit Handler(ErlDrvPort p) : port(p), port_status(port_started) {}
+    Handler();
+    explicit Handler(ErlDrvPort p);
 
     enum PortStatus {
         port_not_started,

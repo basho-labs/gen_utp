@@ -5,7 +5,7 @@
 //
 // globals.h: uTP driver global variables
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -23,16 +23,17 @@
 //
 // -------------------------------------------------------------------
 
+#include <iostream>
 #include "erl_driver.h"
 
 
 #define UTPDRV_DEBUG 0
 #if UTPDRV_DEBUG
-#include <cstdio>
-#define UTPDRV_TRACE(str) fputs(str, stderr)
+#define UTPDRV_TRACER if (false) ; else std::cerr
 #else
-#define UTPDRV_TRACE(str)
+#define UTPDRV_TRACER if (true) ; else std::cerr
 #endif
+#define UTPDRV_TRACE_ENDL UtpDrv::endl
 
 namespace UtpDrv {
 
@@ -42,6 +43,8 @@ extern char* drv_name;
 
 extern ErlDrvMutex* utp_mutex;
 extern ErlDrvMutex* drv_mutex;
+
+const char* const endl = "\r\n";
 
 }
 

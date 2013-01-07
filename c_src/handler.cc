@@ -2,7 +2,7 @@
 //
 // handler.cc: abstract base class for driver handlers
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -26,6 +26,14 @@
 
 using namespace UtpDrv;
 
+UtpDrv::Handler::Handler() : port(0), port_status(port_not_started)
+{
+}
+
+UtpDrv::Handler::Handler(ErlDrvPort p) : port(p), port_status(port_started)
+{
+}
+
 UtpDrv::Handler::~Handler()
 {
     port = 0;
@@ -34,7 +42,7 @@ UtpDrv::Handler::~Handler()
 void
 UtpDrv::Handler::set_port(ErlDrvPort p)
 {
-    UTPDRV_TRACE("Handler::set_port\r\n");
+    UTPDRV_TRACER << "Handler::set_port " << this << UTPDRV_TRACE_ENDL;
     port = p;
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
     port_status = port_started;

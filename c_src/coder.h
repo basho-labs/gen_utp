@@ -5,7 +5,7 @@
 //
 // coder.h: ei encoder and decoder
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -41,9 +41,13 @@ public:
     ~EiEncoder();
 
     EiEncoder& tuple_header(int arity);
+    EiEncoder& list_header(int arity);
+    EiEncoder& empty_list();
     EiEncoder& atom(const char* a);
     EiEncoder& string(const char* str);
-    EiEncoder& ulong(unsigned long val);
+    EiEncoder& ulongval(unsigned long val);
+    EiEncoder& longval(long val);
+    EiEncoder& binary(const void* buf, long len);
 
     const char* buffer(int& len) const;
 

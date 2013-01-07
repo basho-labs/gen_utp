@@ -2,7 +2,7 @@
 //
 // socket_handler.h: abstract base class for handlers owning a socket
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -22,9 +22,12 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdexcept>
+#include <string>
 #include "socket_handler.h"
 #include "globals.h"
 #include "utils.h"
+#include "locker.h"
 
 
 using namespace UtpDrv;
@@ -33,57 +36,25 @@ UtpDrv::SocketHandler::~SocketHandler()
 {
 }
 
-UtpDrv::SocketHandler::SocketHandler() : udp_sock(INVALID_SOCKET)
+UtpDrv::SocketHandler::SocketHandler() : pdl(0), udp_sock(INVALID_SOCKET)
 {
 }
 
-UtpDrv::SocketHandler::SocketHandler(int fd) : udp_sock(fd)
+UtpDrv::SocketHandler::SocketHandler(int fd, const SockOpts& so) :
+    sockopts(so), pdl(0), udp_sock(fd)
 {
 }
 
 void
-UtpDrv::SocketHandler::decode_sock_opts(const Binary& bin, SockOpts& opts)
+UtpDrv::SocketHandler::set_port(ErlDrvPort p)
 {
-    const char* data = bin.data();
-    const char* end = data + bin.size();
-    while (data < end) {
-        switch (*data++) {
-        case UTP_IP:
-            strcpy(opts.addrstr, data);
-            data += strlen(data) + 1;
-            opts.addr_set = true;
-            break;
-        case UTP_FD:
-            opts.fd = ntohl(*reinterpret_cast<const uint32_t*>(data));
-            data += 4;
-            break;
-        case UTP_PORT:
-            opts.port = ntohs(*reinterpret_cast<const uint16_t*>(data));
-            data += 2;
-            break;
-        case UTP_LIST:
-            opts.delivery = DATA_LIST;
-            break;
-        case UTP_BINARY:
-            opts.delivery = DATA_BINARY;
-            break;
-        case UTP_INET:
-            opts.inet6 = false;
-            break;
-        case UTP_INET6:
-            opts.inet6 = true;
-            break;
-        case UTP_SEND_TMOUT:
-            opts.send_tmout = ntohl(*reinterpret_cast<const uint32_t*>(data));
-            data += 4;
-            break;
-        }
-    }
-    if (opts.addr_set) {
-        opts.addr.from_addrport(opts.addrstr, opts.port);
+    UTPDRV_TRACER << "SocketHandler::set_port " << this << UTPDRV_TRACE_ENDL;
+    Handler::set_port(p);
+    pdl = driver_pdl_create(port);
+    if (pdl == 0) {
+        driver_failure_atom(port, const_cast<char*>("port_data_lock_failed"));
     }
 }
-
 
 int
 UtpDrv::SocketHandler::open_udp_socket(int& udp_sock, unsigned short port,
@@ -126,10 +97,30 @@ UtpDrv::SocketHandler::open_udp_socket(int& udp_sock, const SockAddr& addr,
 }
 
 ErlDrvSSizeT
+UtpDrv::SocketHandler::control(unsigned command, const char* buf, ErlDrvSizeT len,
+                               char** rbuf, ErlDrvSizeT rlen)
+{
+    UTPDRV_TRACER << "SocketHandler::control " << this << UTPDRV_TRACE_ENDL;
+    switch (command) {
+    case UTP_CLOSE:
+        return close(buf, len, rbuf, rlen);
+    case UTP_SOCKNAME:
+        return sockname(buf, len, rbuf, rlen);
+    case UTP_PEERNAME:
+        return peername(buf, len, rbuf, rlen);
+    case UTP_SETOPTS:
+        return setopts(buf, len, rbuf, rlen);
+    case UTP_GETOPTS:
+        return getopts(buf, len, rbuf, rlen);
+    }
+    return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
+}
+
+ErlDrvSSizeT
 UtpDrv::SocketHandler::sockname(const char* buf, ErlDrvSizeT len,
                                 char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("SocketHandler::sockname\r\n");
+    UTPDRV_TRACER << "SocketHandler::sockname " << this << UTPDRV_TRACE_ENDL;
     SockAddr addr;
     if (getsockname(udp_sock, addr, &addr.slen) < 0) {
         return encode_error(rbuf, rlen, errno);
@@ -137,10 +128,288 @@ UtpDrv::SocketHandler::sockname(const char* buf, ErlDrvSizeT len,
     return addr.encode(rbuf, rlen);
 }
 
-UtpDrv::SocketHandler::SockOpts::SockOpts() :
-    send_tmout(-1), fd(-1), port(0), delivery(DATA_BINARY),
-    inet6(false), addr_set(false)
+ErlDrvSSizeT
+UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
+                               char** rbuf, ErlDrvSizeT rlen)
 {
+    UTPDRV_TRACER << "SocketHandler::setopts " << this << UTPDRV_TRACE_ENDL;
+    Binary binopts;
+    try {
+        EiDecoder decoder(buf, len);
+        int type, size;
+        decoder.type(type, size);
+        if (type != ERL_BINARY_EXT) {
+            return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+        }
+        binopts.decode(decoder, size);
+    } catch (const EiError&) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
+
+    Active saved_active = sockopts.active;
+    SockOpts opts(sockopts);
+    try {
+        opts.decode_and_merge(binopts);
+    } catch (const std::invalid_argument&) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
+    sockopts = opts;
+    if (sockopts.active != saved_active && sockopts.active != ACTIVE_FALSE) {
+        Receiver rcvr;
+        send_read_buffer(0, rcvr);
+    }
+
+    EiEncoder encoder;
+    encoder.atom("ok");
+    ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+    return encoder.copy_to_binary(binptr, rlen);
+}
+
+ErlDrvSSizeT
+UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
+                               char** rbuf, ErlDrvSizeT rlen)
+{
+    UTPDRV_TRACER << "SocketHandler::getopts " << this << UTPDRV_TRACE_ENDL;
+    Binary binopts;
+    try {
+        EiDecoder decoder(buf, len);
+        int type, size;
+        decoder.type(type, size);
+        if (type != ERL_BINARY_EXT) {
+            return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+        }
+        binopts.decode(decoder, size);
+    } catch (const EiError&) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
+
+    EiEncoder encoder;
+    encoder.tuple_header(2).atom("ok");
+    const char* opt = binopts.data();
+    const char* end = opt + binopts.size();
+    if (opt == end) {
+        encoder.empty_list();
+    } else {
+        encoder.list_header(end-opt);
+        while (opt != end) {
+            switch (*opt++) {
+            case UTP_ACTIVE:
+                encoder.tuple_header(2).atom("active");
+                if (sockopts.active == ACTIVE_FALSE) {
+                    encoder.atom("false");
+                } else if (sockopts.active == ACTIVE_TRUE) {
+                    encoder.atom("true");
+                } else {
+                    encoder.atom("once");
+                }
+                break;
+            case UTP_MODE:
+                encoder.tuple_header(2).atom("mode");
+                if (sockopts.delivery_mode == DATA_LIST) {
+                    encoder.atom("list");
+                } else {
+                    encoder.atom("binary");
+                }
+                break;
+            case UTP_SEND_TMOUT:
+                encoder.tuple_header(2).atom("send_timeout");
+                if (sockopts.send_tmout == -1) {
+                    encoder.atom("infinity");
+                } else {
+                    encoder.longval(sockopts.send_tmout);
+                }
+                break;
+            default:
+            {
+                EiEncoder error;
+                error.tuple_header(2).atom("error").atom(erl_errno_id(EINVAL));
+                ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+                return error.copy_to_binary(binptr, rlen);
+            }
+            break;
+            }
+        }
+        encoder.empty_list();
+    }
+    ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+    return encoder.copy_to_binary(binptr, rlen);
+}
+
+void
+UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
+                                        const std::string* extra)
+{
+    ErlDrvSizeT total = 0;
+    std::string str;
+    {
+        int vlen;
+        PdlLocker pdl_lock(pdl);
+        SysIOVec* vec = driver_peekq(port, &vlen);
+        if (len == 0) {
+            for (int i = 0; i < vlen; ++i) {
+                total += vec[i].iov_len;
+            }
+        } else {
+            total = len;
+        }
+        ErlDrvSizeT deq_size = total;
+        if (extra != 0) {
+            total += extra->size();
+        }
+        str.reserve(total);
+        for (int i = 0; i < vlen; ++i) {
+            str.append(vec[i].iov_base, vec[i].iov_len);
+        }
+        if (extra != 0) {
+            str.append(*extra);
+        }
+        driver_deq(port, deq_size);
+    }
+    ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(str.data());
+    if (receiver.send_to_connected) {
+        ErlDrvTermData term[] = {
+            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp")),
+            ERL_DRV_PORT, driver_mk_port(port),
+            ERL_DRV_BUF2BINARY, data, total,
+            ERL_DRV_TUPLE, 3,
+        };
+        if (sockopts.delivery_mode == DATA_LIST) {
+            term[4] = ERL_DRV_STRING;
+        }
+        MutexLocker lock(drv_mutex);
+        driver_output_term(port, term, sizeof term/sizeof *term);
+    } else {
+        ErlDrvTermData term[] = {
+            ERL_DRV_EXT2TERM, receiver.caller_ref, receiver.caller_ref.size(),
+            ERL_DRV_BUF2BINARY, data, total,
+            ERL_DRV_TUPLE, 2,
+        };
+        if (sockopts.delivery_mode == DATA_LIST) {
+            term[3] = ERL_DRV_STRING;
+        }
+        driver_send_term(port, receiver.caller, term, sizeof term/sizeof *term);
+    }
+    if (sockopts.active == ACTIVE_ONCE) {
+        sockopts.active = ACTIVE_FALSE;
+    }
+}
+
+UtpDrv::SocketHandler::SockOpts::SockOpts() :
+    send_tmout(-1), active(ACTIVE_FALSE), fd(-1), port(0),
+    delivery_mode(DATA_LIST), inet6(false), addr_set(false)
+{
+}
+
+void
+UtpDrv::SocketHandler::SockOpts::decode(const Binary& bin, OptsList* opts_list)
+{
+    const char* data = bin.data();
+    const char* end = data + bin.size();
+    while (data < end) {
+        switch (*data++) {
+        case UTP_IP:
+            strcpy(addrstr, data);
+            data += strlen(data) + 1;
+            addr_set = true;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_IP);
+            }
+            break;
+        case UTP_FD:
+            fd = ntohl(*reinterpret_cast<const uint32_t*>(data));
+            data += 4;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_FD);
+            }
+            break;
+        case UTP_PORT:
+            port = ntohs(*reinterpret_cast<const uint16_t*>(data));
+            data += 2;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_PORT);
+            }
+            break;
+        case UTP_LIST:
+            delivery_mode = DATA_LIST;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_LIST);
+            }
+            break;
+        case UTP_BINARY:
+            delivery_mode = DATA_BINARY;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_BINARY);
+            }
+            break;
+        case UTP_INET:
+            inet6 = false;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_INET);
+            }
+            break;
+        case UTP_INET6:
+            inet6 = true;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_INET6);
+            }
+            break;
+        case UTP_SEND_TMOUT:
+            send_tmout = ntohl(*reinterpret_cast<const int32_t*>(data));
+            data += 4;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_SEND_TMOUT);
+            }
+            break;
+        case UTP_ACTIVE:
+            active = static_cast<Active>(*data++);
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_ACTIVE);
+            }
+            break;
+        }
+    }
+    if (addr_set) {
+        addr.from_addrport(addrstr, port);
+    }
+}
+
+void
+UtpDrv::SocketHandler::SockOpts::decode_and_merge(const Binary& bin)
+{
+    SockOpts so;
+    OptsList opts;
+    so.decode(bin, &opts);
+    OptsList::iterator it = opts.begin();
+    while (it != opts.end()) {
+        switch (*it++) {
+        case UTP_IP:
+            throw std::invalid_argument("ip");
+            break;
+        case UTP_FD:
+            throw std::invalid_argument("fd");
+            break;
+        case UTP_PORT:
+            throw std::invalid_argument("port");
+            break;
+        case UTP_LIST:
+        case UTP_BINARY:
+        case UTP_MODE:
+            delivery_mode = so.delivery_mode;
+            break;
+        case UTP_INET:
+            throw std::invalid_argument("inet");
+            break;
+        case UTP_INET6:
+            throw std::invalid_argument("inet6");
+            break;
+        case UTP_SEND_TMOUT:
+            send_tmout = so.send_tmout;
+            break;
+        case UTP_ACTIVE:
+            active = so.active;
+            break;
+        }
+    }
 }
 
 UtpDrv::SockAddr::SockAddr() : slen(sizeof addr)
@@ -256,7 +525,7 @@ UtpDrv::SockAddr::encode(char** rbuf, ErlDrvSizeT rlen) const
     }
     EiEncoder encoder;
     encoder.tuple_header(2).atom("ok");
-    encoder.tuple_header(2).string(addrstr).ulong(port);
+    encoder.tuple_header(2).string(addrstr).ulongval(port);
     ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
     return encoder.copy_to_binary(binptr, rlen);
 }

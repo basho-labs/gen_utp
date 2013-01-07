@@ -2,7 +2,7 @@
 //
 // utpdrv.cc: driver entry points for libutp functions
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -87,7 +87,7 @@ utp_ready_input(ErlDrvData drv_data, ErlDrvEvent event)
 static void
 utp_process_exit(ErlDrvData drv_data, ErlDrvMonitor* monitor)
 {
-    Handler* drv = reinterpret_cast<Handler*>(drv_data);
+    MainHandler* drv = reinterpret_cast<MainHandler*>(drv_data);
     drv->process_exit(monitor);
 }
 
@@ -95,6 +95,7 @@ static void
 utp_stop_select(ErlDrvEvent event, void*)
 {
     long fd = reinterpret_cast<long>(event);
+    UTPDRV_TRACER << "utp_stop_select: closing fd " << fd << UTPDRV_TRACE_ENDL;
     ::close(fd);
 }
 

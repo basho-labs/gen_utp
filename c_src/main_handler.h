@@ -5,7 +5,7 @@
 //
 // main_handler.h: handler for primary uTP driver port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -24,6 +24,7 @@
 // -------------------------------------------------------------------
 
 #include <map>
+#include <set>
 #include "handler.h"
 #include "utils.h"
 #include "utp_handler.h"
@@ -56,13 +57,13 @@ public:
     static ErlDrvPort drv_port();
 
     static void start_input(int fd, SocketHandler* handler);
-    static void stop_input(int& fd);
+    static void stop_input(int fd);
 
-    static void add_monitor(const ErlDrvMonitor& mon, Handler* h);
-    static void del_monitor(ErlDrvPort port, ErlDrvMonitor& mon);
+    static void add_monitor(ErlDrvTermData proc, UtpHandler* h);
+    static void del_monitor(ErlDrvTermData proc);
 
 private:
-    // singleton
+    // MainHandler singleton
     static MainHandler* main_handler;
 
     ErlDrvTermData owner;
@@ -78,8 +79,10 @@ private:
 
     typedef std::map<int, SocketHandler*> FdMap;
     FdMap fdmap;
-    typedef std::map<ErlDrvMonitor, Handler*, MonCompare> MonMap;
-    MonMap monmap;
+    typedef std::map<ErlDrvMonitor, UtpHandler*, MonCompare> MonMap;
+    typedef std::map<ErlDrvTermData, ErlDrvMonitor> ProcMonMap;
+    MonMap mon_map;
+    ProcMonMap proc_mon_map;
 
     ErlDrvSSizeT
     connect_start(const char* buf, ErlDrvSizeT len,
@@ -91,8 +94,8 @@ private:
     void select(int fd, SocketHandler* handler);
     void deselect(int& fd);
 
-    void add_mon(const ErlDrvMonitor& mon, Handler* h);
-    void del_mon(ErlDrvPort port, ErlDrvMonitor& mon);
+    void add_mon(ErlDrvTermData proc, UtpHandler* h);
+    void del_mon(ErlDrvTermData proc);
 
     // prevent copies
     MainHandler(const MainHandler&);

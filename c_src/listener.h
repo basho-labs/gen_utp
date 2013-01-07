@@ -5,7 +5,7 @@
 //
 // listener.h: uTP listen port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -35,12 +35,8 @@ class Server;
 class Listener : public SocketHandler
 {
 public:
-    Listener(int sock, DataDelivery del, long send_timeout);
+    Listener(int sock, const SockOpts& so);
     ~Listener();
-
-    ErlDrvSSizeT
-    control(unsigned command, const char* buf, ErlDrvSizeT len,
-            char** rbuf, ErlDrvSizeT rlen);
 
     void outputv(ErlIOVec& ev);
 
@@ -59,8 +55,6 @@ protected:
 
 private:
     SockAddr my_addr;
-    DataDelivery data_delivery;
-    ErlDrvSSizeT send_tmout;
 
     void do_write(byte* bytes, size_t count);
     void do_incoming(UTPSocket* utp);

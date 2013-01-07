@@ -5,7 +5,7 @@
 //
 // server.h: uTP server port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -29,17 +29,11 @@
 
 namespace UtpDrv {
 
-class Listener;
-
 class Server : public UtpHandler
 {
 public:
-    Server(int sock, DataDelivery del, long send_timeout);
+    Server(int sock, const SockOpts& so);
     ~Server();
-
-    ErlDrvSSizeT
-    control(unsigned command, const char* buf, ErlDrvSizeT len,
-            char** rbuf, ErlDrvSizeT rlen);
 
 private:
     void do_send_to(const byte* p, size_t len, const sockaddr* to,

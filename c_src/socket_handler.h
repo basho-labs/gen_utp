@@ -5,7 +5,7 @@
 //
 // socket_handler.h: abstract base class for handlers owning a socket
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -23,6 +23,8 @@
 //
 // -------------------------------------------------------------------
 
+#include <vector>
+#include <string>
 #include "handler.h"
 #include "drv_types.h"
 
@@ -60,36 +62,54 @@ class SocketHandler : public Handler
 public:
     ~SocketHandler();
 
-    enum {
+    enum Opts {
         UTP_IP = 1,
         UTP_FD,
         UTP_PORT,
         UTP_LIST,
         UTP_BINARY,
+        UTP_MODE,
         UTP_INET,
         UTP_INET6,
-        UTP_SEND_TMOUT
+        UTP_SEND_TMOUT,
+        UTP_ACTIVE
+    };
+    typedef std::vector<Opts> OptsList;
+
+    enum Active {
+        ACTIVE_FALSE,
+        ACTIVE_ONCE,
+        ACTIVE_TRUE
     };
 
     struct SockOpts {
         SockOpts();
+
+        void decode(const Binary& bin, OptsList* opts_decoded = 0);
+        void decode_and_merge(const Binary& bin);
+
         SockAddr addr;
         char addrstr[INET6_ADDRSTRLEN];
         long send_tmout;
+        Active active;
         int fd;
         unsigned short port;
-        DataDelivery delivery;
+        DeliveryMode delivery_mode;
         bool inet6;
         bool addr_set;
     };
 
-    static void decode_sock_opts(const Binary& opts, SockOpts&);
+    void set_port(ErlDrvPort p);
 
     static int
     open_udp_socket(int& udp_sock, unsigned short port = 0,
                     bool reuseaddr = false);
     static int
     open_udp_socket(int& udp_sock, const SockAddr& sa, bool reuseaddr = false);
+
+    ErlDrvSSizeT
+    control(unsigned command, const char* buf, ErlDrvSizeT len,
+            char** rbuf, ErlDrvSizeT rlen);
 
     virtual ErlDrvSSizeT
     sockname(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
@@ -98,11 +118,40 @@ public:
 
 protected:
     SocketHandler();
-    explicit SocketHandler(int fd);
+    SocketHandler(int fd, const SockOpts& so);
 
     virtual ErlDrvSSizeT
     close(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen) = 0;
 
+    virtual ErlDrvSSizeT
+    setopts(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    virtual ErlDrvSSizeT
+    getopts(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    virtual ErlDrvSSizeT
+    peername(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen) = 0;
+
+    // In the send_read_buffer function, a Receiver object is used to
+    // determine where to send the data. If the send_to_connected field is
+    // true, send the message to the connected process; if false, send it
+    // to the process identified by the caller field, including the
+    // caller_ref in the message.
+    struct Receiver {
+        Receiver() : send_to_connected(true) {}
+        Receiver(bool b, ErlDrvTermData td, const Binary& bin) :
+            caller_ref(bin), caller(td), send_to_connected(b) {}
+        Binary caller_ref;
+        ErlDrvTermData caller;
+        bool send_to_connected;
+    };
+
+    void
+    send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
+                     const std::string* extra_data = 0);
+
+    SockOpts sockopts;
+    ErlDrvPDL pdl;
     int udp_sock;
 };
 

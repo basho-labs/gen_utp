@@ -2,7 +2,7 @@
 //
 // main_handler.cc: handler for primary uTP driver port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -49,7 +49,7 @@ UtpDrv::MainHandler::~MainHandler()
 int
 UtpDrv::MainHandler::driver_init()
 {
-    UTPDRV_TRACE("MainHandler::driver_init\r\n");
+    UTPDRV_TRACER << "MainHandler::driver_init\r\n";
     utp_mutex = erl_drv_mutex_create(const_cast<char*>("utp"));
     return 0;
 }
@@ -57,7 +57,7 @@ UtpDrv::MainHandler::driver_init()
 void
 UtpDrv::MainHandler::driver_finish()
 {
-    UTPDRV_TRACE("MainHandler::driver_finish\r\n");
+    UTPDRV_TRACER << "MainHandler::driver_finish\r\n";
     erl_drv_mutex_destroy(utp_mutex);
     delete main_handler;
 }
@@ -76,7 +76,7 @@ ErlDrvSSizeT
 UtpDrv::MainHandler::control(unsigned command, const char* buf, ErlDrvSizeT len,
                              char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("MainHandler::control\r\n");
+    UTPDRV_TRACER << "MainHandler::control\r\n";
     switch (command) {
     case UTP_LISTEN:
         return listen(buf, len, rbuf, rlen);
@@ -93,7 +93,7 @@ UtpDrv::MainHandler::control(unsigned command, const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::MainHandler::start()
 {
-    UTPDRV_TRACE("MainHandler::start\r\n");
+    UTPDRV_TRACER << "MainHandler::start\r\n";
     driver_set_timer(port, timeout_check);
     main_handler = this;
     drv_mutex = erl_drv_mutex_create(const_cast<char*>("drv"));
@@ -103,7 +103,7 @@ UtpDrv::MainHandler::start()
 void
 UtpDrv::MainHandler::stop()
 {
-    UTPDRV_TRACE("MainHandler::stop\r\n");
+    UTPDRV_TRACER << "MainHandler::stop\r\n";
     driver_cancel_timer(port);
     erl_drv_mutex_destroy(map_mutex);
     erl_drv_mutex_destroy(drv_mutex);
@@ -129,82 +129,112 @@ UtpDrv::MainHandler::ready_input(long fd)
 void
 UtpDrv::MainHandler::outputv(ErlIOVec&)
 {
-    UTPDRV_TRACE("MainHandler::outputv\r\n");
+    UTPDRV_TRACER << "MainHandler::outputv\r\n";
 }
 
 void
 UtpDrv::MainHandler::process_exit(ErlDrvMonitor* monitor)
 {
-    UTPDRV_TRACE("MainHandler::process_exit\r\n");
+    UTPDRV_TRACER << "MainHandler::process_exit\r\n";
+    UtpHandler* h = 0;
+    ErlDrvTermData proc;
+    {
+        MutexLocker lock(map_mutex);
+        MonMap::iterator it = mon_map.find(*monitor);
+        if (it != mon_map.end()) {
+            h = it->second;
+            mon_map.erase(it);
+            proc = driver_get_monitored_process(port, monitor);
+            proc_mon_map.erase(proc);
+        }
+    }
+    if (h != 0) {
+        h->process_exited(monitor, proc);
+    }
 }
 
 ErlDrvPort
 UtpDrv::MainHandler::drv_port()
 {
-    UTPDRV_TRACE("MainHandler::drv_port\r\n");
     return main_handler->port;
 }
 
 void
 UtpDrv::MainHandler::start_input(int fd, SocketHandler* handler)
 {
-    UTPDRV_TRACE("MainHandler::start_input\r\n");
-    main_handler->select(fd, handler);
+    UTPDRV_TRACER << "MainHandler::start_input for socket " << fd
+                  << UTPDRV_TRACE_ENDL;
+    if (main_handler != 0) {
+        main_handler->select(fd, handler);
+    }
 }
 
 void
-UtpDrv::MainHandler::stop_input(int& fd)
+UtpDrv::MainHandler::stop_input(int fd)
 {
-    UTPDRV_TRACE("MainHandler::stop_input\r\n");
+    UTPDRV_TRACER << "MainHandler::stop_input for socket " << fd
+                  << UTPDRV_TRACE_ENDL;
     if (main_handler != 0) {
         main_handler->deselect(fd);
     }
 }
 
 void
-UtpDrv::MainHandler::add_monitor(const ErlDrvMonitor& mon, Handler* h)
+UtpDrv::MainHandler::add_monitor(ErlDrvTermData proc, UtpHandler* h)
 {
-    UTPDRV_TRACE("MainHandler::add_monitor\r\n");
-    main_handler->add_mon(mon, h);
+    UTPDRV_TRACER << "MainHandler::add_monitor\r\n";
+    if (main_handler != 0) {
+        main_handler->add_mon(proc, h);
+    }
 }
 
 void
-UtpDrv::MainHandler::add_mon(const ErlDrvMonitor& mon, Handler* h)
+UtpDrv::MainHandler::add_mon(ErlDrvTermData proc, UtpHandler* h)
 {
-    UTPDRV_TRACE("MainHandler::add_mon\r\n");
+    UTPDRV_TRACER << "MainHandler::add_mon\r\n";
+    ErlDrvMonitor mon;
+    driver_monitor_process(port, proc, &mon);
+    MonMap::value_type v1(mon, h);
+    ProcMonMap::value_type v2(proc, mon);
     MutexLocker lock(map_mutex);
-    MonMap::value_type val(mon, h);
-    monmap.insert(val);
+    mon_map.insert(v1);
+    proc_mon_map.insert(v2);
 }
 
 void
-UtpDrv::MainHandler::del_monitor(ErlDrvPort port, ErlDrvMonitor& mon)
+UtpDrv::MainHandler::del_monitor(ErlDrvTermData proc)
 {
-    UTPDRV_TRACE("MainHandler::del_monitor\r\n");
-    main_handler->del_mon(port, mon);
+    UTPDRV_TRACER << "MainHandler::del_monitor\r\n";
+    if (main_handler != 0) {
+        main_handler->del_mon(proc);
+    }
 }
 
 void
-UtpDrv::MainHandler::del_mon(ErlDrvPort port, ErlDrvMonitor& mon)
+UtpDrv::MainHandler::del_mon(ErlDrvTermData proc)
 {
-    UTPDRV_TRACE("MainHandler::del_mon\r\n");
+    UTPDRV_TRACER << "MainHandler::del_mon\r\n";
     MutexLocker lock(map_mutex);
-    monmap.erase(mon);
-    driver_demonitor_process(port, &mon);
+    ProcMonMap::iterator it = proc_mon_map.find(proc);
+    if (it != proc_mon_map.end()) {
+        driver_demonitor_process(port, &it->second);
+        mon_map.erase(it->second);
+        proc_mon_map.erase(it);
+    }
 }
 
 ErlDrvSSizeT
 UtpDrv::MainHandler::connect_start(const char* buf, ErlDrvSizeT len,
                                    char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("MainHandler::connect_start\r\n");
-    int arity, type, size;
+    UTPDRV_TRACER << "MainHandler::connect_start\r\n";
     Binary ref, binopts;
     long bin_size;
     char addrstr[INET6_ADDRSTRLEN];
     unsigned long addrport;
     try {
         EiDecoder decoder(buf, len);
+        int arity, type, size;
         decoder.tuple_header(arity);
         if (arity != 4) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
@@ -234,7 +264,7 @@ UtpDrv::MainHandler::connect_start(const char* buf, ErlDrvSizeT len,
     }
 
     SocketHandler::SockOpts opts;
-    SocketHandler::decode_sock_opts(binopts, opts);
+    opts.decode(binopts);
     int udp_sock, err;
     if (opts.fd != INVALID_SOCKET) {
         udp_sock = opts.fd;
@@ -262,7 +292,7 @@ UtpDrv::MainHandler::connect_start(const char* buf, ErlDrvSizeT len,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
     } else {
-        Client* client = new Client(udp_sock,ref,opts.delivery,opts.send_tmout);
+        Client* client = new Client(udp_sock, opts, ref);
         ErlDrvPort new_port = create_port(caller, client);
         client->set_port(new_port);
         select(udp_sock, client);
@@ -285,11 +315,11 @@ ErlDrvSSizeT
 UtpDrv::MainHandler::listen(const char* buf, ErlDrvSizeT len,
                             char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("MainHandler::listen\r\n");
-    int arity, type, size;
+    UTPDRV_TRACER << "MainHandler::listen\r\n";
     Binary ref, binopts;
     try {
         EiDecoder decoder(buf, len);
+        int arity, type, size;
         decoder.tuple_header(arity);
         if (arity != 2) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
@@ -310,7 +340,7 @@ UtpDrv::MainHandler::listen(const char* buf, ErlDrvSizeT len,
     ErlDrvTermData caller = driver_caller(port);
 
     SocketHandler::SockOpts opts;
-    SocketHandler::decode_sock_opts(binopts, opts);
+    opts.decode(binopts);
     int udp_sock, err;
     if (opts.fd != INVALID_SOCKET) {
         udp_sock = opts.fd;
@@ -338,8 +368,7 @@ UtpDrv::MainHandler::listen(const char* buf, ErlDrvSizeT len,
         };
         driver_send_term(port, caller, term, sizeof term/sizeof *term);
     } else {
-        Listener* listener = new Listener(udp_sock, opts.delivery,
-                                          opts.send_tmout);
+        Listener* listener = new Listener(udp_sock, opts);
         ErlDrvPort new_port = create_port(caller, listener);
         listener->set_port(new_port);
         select(udp_sock, listener);
@@ -358,7 +387,7 @@ UtpDrv::MainHandler::listen(const char* buf, ErlDrvSizeT len,
 void
 UtpDrv::MainHandler::select(int fd, SocketHandler* handler)
 {
-    UTPDRV_TRACE("MainHandler::select\r\n");
+    UTPDRV_TRACER << "MainHandler::select for socket " << fd << UTPDRV_TRACE_ENDL;
     if (port != 0) {
         driver_select(port, reinterpret_cast<ErlDrvEvent>(fd),
                       ERL_DRV_READ|ERL_DRV_USE, 1);
@@ -371,7 +400,7 @@ UtpDrv::MainHandler::select(int fd, SocketHandler* handler)
 void
 UtpDrv::MainHandler::deselect(int& fd)
 {
-    UTPDRV_TRACE("MainHandler::deselect\r\n");
+    UTPDRV_TRACER << "MainHandler::deselect socket " << fd << UTPDRV_TRACE_ENDL;
     if (fd != INVALID_SOCKET) {
         if (port != 0) {
             driver_select(port, reinterpret_cast<ErlDrvEvent>(fd),
@@ -379,6 +408,5 @@ UtpDrv::MainHandler::deselect(int& fd)
         }
         MutexLocker lock(map_mutex);
         fdmap.erase(fd);
-        fd = INVALID_SOCKET;
     }
 }

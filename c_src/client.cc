@@ -2,7 +2,7 @@
 //
 // client.cc: uTP client port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -28,64 +28,53 @@
 
 using namespace UtpDrv;
 
-UtpDrv::Client::Client(int sock, const Binary& ref,
-                       DataDelivery del, long send_timeout) :
-    UtpHandler(sock, del, send_timeout)
+UtpDrv::Client::Client(int sock, const SockOpts& so, const Binary& ref) :
+    UtpHandler(sock, so)
 {
-    UTPDRV_TRACE("Client::Client\r\n");
+    UTPDRV_TRACER << "Client::Client " << this
+                  << ", socket " << sock << UTPDRV_TRACE_ENDL;
     caller_ref = ref;
 }
 
 UtpDrv::Client::~Client()
 {
-    UTPDRV_TRACE("Client::~Client\r\n");
+    UTPDRV_TRACER << "Client::~Client " << this << UTPDRV_TRACE_ENDL;
 }
 
 ErlDrvSSizeT
 UtpDrv::Client::control(unsigned command, const char* buf, ErlDrvSizeT len,
                         char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("Client::control\r\n");
+    UTPDRV_TRACER << "Client::control " << this << UTPDRV_TRACE_ENDL;
     switch (command) {
     case UTP_CONNECT_VALIDATE:
         return connect_validate(buf, len, rbuf, rlen);
-    case UTP_SOCKNAME:
-        return UtpHandler::sockname(buf, len, rbuf, rlen);
-    case UTP_PEERNAME:
-        return peername(buf, len, rbuf, rlen);
-    case UTP_CLOSE:
-        return close(buf, len, rbuf, rlen);
-    case UTP_SETOPTS:
-        return setopts(buf, len, rbuf, rlen);
-    case UTP_CANCEL_SEND:
-        return cancel_send();
-    default:
-        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
     }
+    return UtpHandler::control(command, buf, len, rbuf, rlen);
 }
 
 void
 UtpDrv::Client::connect_to(const SockAddr& addr)
 {
-    UTPDRV_TRACE("Client::connect_to\r\n");
+    UTPDRV_TRACER << "Client::connect_to " << this << UTPDRV_TRACE_ENDL;
     status = connect_pending;
     MutexLocker lock(utp_mutex);
     utp = UTP_Create(&Client::send_to, this, addr, addr.slen);
-    set_utp_callbacks(utp);
+    set_utp_callbacks();
     UTP_Connect(utp);
 }
 
 void
 UtpDrv::Client::do_incoming(UTPSocket* utp)
 {
-    UTPDRV_TRACE("Client::do_incoming\r\n");
+    UTPDRV_TRACER << "Client::do_incoming " << this << UTPDRV_TRACE_ENDL;
 }
 
 ErlDrvSSizeT
 UtpDrv::Client::connect_validate(const char* buf, ErlDrvSizeT len,
                                  char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("Client::connect_validate\r\n");
+    UTPDRV_TRACER << "Client::connect_validate " << this << UTPDRV_TRACE_ENDL;
     Binary ref;
     try {
         int type, size;

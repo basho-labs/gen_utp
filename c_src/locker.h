@@ -5,7 +5,7 @@
 //
 // locker.h: Erlang driver lock/unlock
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -27,25 +27,35 @@
 
 namespace UtpDrv {
 
-    template<typename T, void (*lock)(T), void (*unlock)(T)> class BaseLocker
-    {
-    public:
-        explicit BaseLocker(T m) : mtx(m) { lock(mtx); }
-        ~BaseLocker() { unlock(mtx); }
+template<typename T, void (*lock)(T), void (*unlock)(T)>
+class BaseLocker
+{
+public:
+    explicit BaseLocker(T m) : mtx(m) { lock(mtx); }
+    ~BaseLocker() { unlock(mtx); }
 
-    private:
-        T mtx;
+private:
+    T mtx;
 
-        BaseLocker(const BaseLocker&);
-        BaseLocker& operator=(const BaseLocker&);
-    };
+    BaseLocker(const BaseLocker&);
+    BaseLocker& operator=(const BaseLocker&);
+};
 
-    typedef BaseLocker<ErlDrvMutex*,
-        erl_drv_mutex_lock, erl_drv_mutex_unlock> MutexLocker;
+typedef BaseLocker<ErlDrvMutex*,
+                   erl_drv_mutex_lock, erl_drv_mutex_unlock> MutexLocker;
 
-    typedef BaseLocker<ErlDrvPDL,
-        driver_pdl_lock, driver_pdl_unlock> PdlLocker;
+typedef BaseLocker<ErlDrvPDL,
+                   driver_pdl_lock, driver_pdl_unlock> PdlLocker;
 
 }
+
+
+
+// this block comment is for emacs, do not delete
+// Local Variables:
+// mode: c++
+// c-file-style: "stroustrup"
+// c-file-offsets: ((innamespace . 0))
+// End:
 
 #endif

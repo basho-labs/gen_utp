@@ -5,7 +5,7 @@
 //
 // client.h: uTP client port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -32,7 +32,7 @@ namespace UtpDrv {
 class Client : public UtpHandler
 {
 public:
-    Client(int sock, const Binary& ref, DataDelivery del, long send_timeout);
+    Client(int sock, const SockOpts& so, const Binary& ref);
     ~Client();
 
     ErlDrvSSizeT

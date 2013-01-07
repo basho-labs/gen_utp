@@ -5,7 +5,7 @@
 //
 // utp_handler.h: base class for uTP port handlers
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -23,7 +23,7 @@
 //
 // -------------------------------------------------------------------
 
-#include <list>
+#include <map>
 #include "socket_handler.h"
 #include "utils.h"
 #include "drv_types.h"
@@ -44,10 +44,10 @@ public:
     void stop();
 
     virtual void
-    set_port(ErlDrvPort p);
+    input_ready();
 
     virtual void
-    input_ready();
+    process_exited(const ErlDrvMonitor* mon, ErlDrvTermData proc);
 
     static void send_to(void* data, const byte* p, size_t len,
                         const sockaddr* to, socklen_t slen);
@@ -60,9 +60,14 @@ public:
     static void utp_incoming(void* data, UTPSocket* utp);
 
 protected:
-    UtpHandler(int sock, DataDelivery del, long send_timeout);
+    UtpHandler(int sock, const SockOpts& so);
 
-    void set_utp_callbacks(UTPSocket* utp);
+    void set_utp_callbacks();
+    void set_empty_utp_callbacks();
+
+    ErlDrvSSizeT
+    control(unsigned command, const char* buf, ErlDrvSizeT len,
+            char** rbuf, ErlDrvSizeT rlen);
 
     virtual ErlDrvSSizeT
     peername(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
@@ -71,9 +76,12 @@ protected:
     close(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
 
     virtual ErlDrvSSizeT
-    setopts(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+    recv(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
 
     ErlDrvSSizeT cancel_send();
+    ErlDrvSSizeT cancel_recv();
+
+    ErlDrvSSizeT new_controlling_process();
 
     void close_utp();
 
@@ -98,23 +106,15 @@ protected:
         stopped
     };
 
-    void demonitor();
-
-    typedef std::list<ErlDrvTermData> WaitingWriters;
-
-    WaitingWriters waiting_writers;
     WriteQueue write_queue;
     Binary caller_ref;
     ErlDrvMutex* write_q_mutex;
-    ErlDrvSSizeT send_tmout;
-    ErlDrvMonitor mon;
-    ErlDrvPDL pdl;
     ErlDrvTermData caller;
     UTPSocket* utp;
+    ErlDrvSizeT recv_len;
     UtpPortStatus status;
-    DataDelivery data_delivery;
     int state, error_code;
-    bool writable, mon_valid;
+    bool writable, sender_waiting, receiver_waiting;
 };
 
 }

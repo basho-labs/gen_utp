@@ -2,7 +2,7 @@
 %%
 %% gen_utp_opts: socket options for uTP protocol
 %%
-%% Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,34 +28,60 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([validate/1]).
+-export([validate/1, validate_names/1]).
 
--type utpmsg() :: list | binary.
+-type utpmode() :: list | binary.
 -type utptimeout() :: pos_integer() | infinity.
 -type utpfamily() :: inet | inet6.
 -type utpipopt() :: {ip,gen_utp:utpaddr()} | {ifaddr,gen_utp:utpaddr()}.
 -type utpfdopt() :: {fd,non_neg_integer()}.
 -type utpportopt() :: {port,gen_utp:utpport()}.
--type utpmsgopt() :: {mode,utpmsg()} | utpmsg().
+-type utpmodeopt() :: {mode,utpmode()} | utpmode().
 -type utpsendopt() :: {send_timeout,utptimeout()}.
--type utpopt() :: utpipopt() | utpfdopt() | utpportopt() | utpmsgopt() |
-                  utpfamily() | utpsendopt().
+-type utpactive() :: once | boolean().
+-type utpactiveopt() :: {active, utpactive()}.
+-type utpopt() :: utpipopt() | utpfdopt() | utpportopt() | utpmodeopt() |
+                  utpfamily() | utpsendopt() | utpactiveopt().
 -type utpopts() :: [utpopt()].
+-type utpgetoptname() :: active | mode | send_timeout.
+-type utpgetoptnames() :: [utpgetoptname()].
 
 
 -spec validate(utpopts()) -> #utp_options{}.
-validate(Opts) ->
+validate(Opts) when is_list(Opts) ->
     validate(Opts, #utp_options{}).
 
+-spec validate_names(utpgetoptnames()) -> {ok, binary()} | {error, any()}.
+validate_names(OptNames) when is_list(OptNames) ->
+    Result = lists:foldl(fun(_, {error, _}=Error) ->
+                                 Error;
+                            (active, Bin) ->
+                                 <<Bin/binary, ?UTP_ACTIVE:8>>;
+                            (mode, Bin) ->
+                                 <<Bin/binary, ?UTP_MODE:8>>;
+                            (send_timeout, Bin) ->
+                                 <<Bin/binary, ?UTP_SEND_TMOUT:8>>;
+                            (_, _) ->
+                                 {error, einval}
+                         end, <<>>, OptNames),
+    case Result of
+        {error, _}=Error ->
+            Error;
+        BinOpts ->
+            {ok, BinOpts}
+    end.
+
+%% Internal functions
+
 -spec validate(utpopts(), #utp_options{}) -> #utp_options{}.
-validate([{mode,Mode}|Opts], UtpOpts) when Mode =:= listen; Mode =:= binary ->
-    validate(Opts, UtpOpts#utp_options{delivery=Mode});
+validate([{mode,Mode}|Opts], UtpOpts) when Mode =:= list; Mode =:= binary ->
+    validate(Opts, UtpOpts#utp_options{mode=Mode});
 validate([{mode,_}=Mode|_], _) ->
     erlang:error(badarg, [Mode]);
 validate([binary|Opts], UtpOpts) ->
-    validate(Opts, UtpOpts#utp_options{delivery=binary});
+    validate(Opts, UtpOpts#utp_options{mode=binary});
 validate([list|Opts], UtpOpts) ->
-    validate(Opts, UtpOpts#utp_options{delivery=list});
+    validate(Opts, UtpOpts#utp_options{mode=list});
 validate([{ip,IpAddr}|Opts], UtpOpts) when is_tuple(IpAddr) ->
     validate(Opts, validate_ipaddr(IpAddr, UtpOpts));
 validate([{ip,IpAddr}|Opts], UtpOpts) when is_list(IpAddr) ->
@@ -102,6 +128,11 @@ validate([{send_timeout,Tm}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{send_tmout=Tm});
 validate([{send_timeout,_}=ST|_], _) ->
     erlang:error(badarg, [ST]);
+validate([{active,Active}|Opts], UtpOpts)
+  when is_boolean(Active); Active =:= once ->
+    validate(Opts, UtpOpts#utp_options{active=Active});
+validate([{active,_}=Active|_], _) ->
+    erlang:error(badarg, [Active]);
 validate([], UtpOpts) ->
     UtpOpts.
 

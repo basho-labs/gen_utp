@@ -2,7 +2,7 @@
 //
 // listener.cc: uTP listen port
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -31,10 +31,11 @@
 
 using namespace UtpDrv;
 
-UtpDrv::Listener::Listener(int sock, DataDelivery del, long send_timeout) :
-    SocketHandler(sock), data_delivery(del), send_tmout(send_timeout)
+UtpDrv::Listener::Listener(int sock, const SockOpts& so) :
+    SocketHandler(sock, so)
 {
-    UTPDRV_TRACE("Listener::Listener\r\n");
+    UTPDRV_TRACER << "Listener::Listener " << this
+                  << ", socket " << sock << UTPDRV_TRACE_ENDL;
     if (getsockname(udp_sock, my_addr, &my_addr.slen) < 0) {
         throw SocketFailure(errno);
     }
@@ -42,36 +43,20 @@ UtpDrv::Listener::Listener(int sock, DataDelivery del, long send_timeout) :
 
 UtpDrv::Listener::~Listener()
 {
-    UTPDRV_TRACE("Listener::~Listener\r\n");
-}
-
-ErlDrvSSizeT
-UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
-                          char** rbuf, ErlDrvSizeT rlen)
-{
-    UTPDRV_TRACE("Listener::control\r\n");
-    switch (command) {
-    case UTP_CLOSE:
-        return close(buf, len, rbuf, rlen);
-    case UTP_SOCKNAME:
-        return sockname(buf, len, rbuf, rlen);
-    case UTP_PEERNAME:
-        return peername(buf, len, rbuf, rlen);
-    }
-    return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
+    UTPDRV_TRACER << "Listener::~Listener " << this << UTPDRV_TRACE_ENDL;
 }
 
 void
 UtpDrv::Listener::outputv(ErlIOVec&)
 {
-    UTPDRV_TRACE("Listener::outputv\r\n");
+    UTPDRV_TRACER << "Listener::outputv " << this << UTPDRV_TRACE_ENDL;
     send_not_connected(port);
 }
 
 void
 UtpDrv::Listener::stop()
 {
-    UTPDRV_TRACE("Listener::stop\r\n");
+    UTPDRV_TRACER << "Listener::stop " << this << UTPDRV_TRACE_ENDL;
     MainHandler::stop_input(udp_sock);
     delete this;
 }
@@ -79,13 +64,13 @@ UtpDrv::Listener::stop()
 void
 UtpDrv::Listener::process_exit(ErlDrvMonitor* mon)
 {
-    UTPDRV_TRACE("Listener::process_exit\r\n");
+    UTPDRV_TRACER << "Listener::process_exit " << this << UTPDRV_TRACE_ENDL;
 }
 
 void
 UtpDrv::Listener::input_ready()
 {
-    UTPDRV_TRACE("Listener::input_ready\r\n");
+    UTPDRV_TRACER << "Listener::input_ready " << this << UTPDRV_TRACE_ENDL;
     // TODO: when recv buffer sizes can be varied, the following buffer will
     // need to come from a pool
     byte buf[8192];
@@ -105,7 +90,7 @@ UtpDrv::Listener::input_ready()
                 return;
             }
         }
-        Server* server = new Server(sock, data_delivery, send_tmout);
+        Server* server = new Server(sock, sockopts);
         bool is_utp;
         {
             MutexLocker lock(utp_mutex);
@@ -165,14 +150,14 @@ UtpDrv::Listener::input_ready()
 void
 UtpDrv::Listener::do_write(byte* bytes, size_t count)
 {
-    UTPDRV_TRACE("Listener::do_write\r\n");
+    UTPDRV_TRACER << "Listener::do_write " << this << UTPDRV_TRACE_ENDL;
     // do nothing
 }
 
 void
 UtpDrv::Listener::do_incoming(UTPSocket* utp)
 {
-    UTPDRV_TRACE("Listener::do_incoming\r\n");
+    UTPDRV_TRACER << "Listener::do_incoming " << this << UTPDRV_TRACE_ENDL;
 }
 
 ErlDrvSSizeT
@@ -190,6 +175,6 @@ ErlDrvSSizeT
 UtpDrv::Listener::peername(const char* buf, ErlDrvSizeT len,
                            char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACE("Listener::peername\r\n");
+    UTPDRV_TRACER << "Listener::peername " << this << UTPDRV_TRACE_ENDL;
     return encode_error(rbuf, rlen, ENOTCONN);
 }

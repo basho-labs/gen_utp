@@ -2,7 +2,7 @@
 //
 // coder.cc: ei encoder and decoder
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -48,6 +48,24 @@ UtpDrv::EiEncoder::tuple_header(int arity)
 }
 
 EiEncoder&
+UtpDrv::EiEncoder::list_header(int arity)
+{
+    if (ei_x_encode_list_header(this, arity) != 0) {
+        throw EiError();
+    }
+    return *this;
+}
+
+EiEncoder&
+UtpDrv::EiEncoder::empty_list()
+{
+    if (ei_x_encode_empty_list(this) != 0) {
+        throw EiError();
+    }
+    return *this;
+}
+
+EiEncoder&
 UtpDrv::EiEncoder::atom(const char* a)
 {
     if (ei_x_encode_atom(this, a) != 0) {
@@ -66,9 +84,27 @@ UtpDrv::EiEncoder::string(const char* str)
 }
 
 EiEncoder&
-UtpDrv::EiEncoder::ulong(unsigned long val)
+UtpDrv::EiEncoder::ulongval(unsigned long val)
 {
     if (ei_x_encode_ulong(this, val) != 0) {
+        throw EiError();
+    }
+    return *this;
+}
+
+EiEncoder&
+UtpDrv::EiEncoder::longval(long val)
+{
+    if (ei_x_encode_long(this, val) != 0) {
+        throw EiError();
+    }
+    return *this;
+}
+
+EiEncoder&
+UtpDrv::EiEncoder::binary(const void* buf, long len)
+{
+    if (ei_x_encode_binary(this, buf, len) != 0) {
         throw EiError();
     }
     return *this;
