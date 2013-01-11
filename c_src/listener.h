@@ -23,6 +23,7 @@
 //
 // -------------------------------------------------------------------
 
+#include <list>
 #include "socket_handler.h"
 #include "utils.h"
 #include "libutp/utp.h"
@@ -37,6 +38,10 @@ class Listener : public SocketHandler
 public:
     Listener(int sock, const SockOpts& so);
     ~Listener();
+
+    ErlDrvSSizeT
+    control(unsigned command, const char* buf, ErlDrvSizeT len,
+            char** rbuf, ErlDrvSizeT rlen);
 
     void outputv(ErlIOVec& ev);
 
@@ -53,8 +58,21 @@ protected:
     ErlDrvSSizeT peername(const char* buf, ErlDrvSizeT len,
                           char** rbuf, ErlDrvSizeT rlen);
 
+    ErlDrvSSizeT accept(const char* buf, ErlDrvSizeT len,
+                        char** rbuf, ErlDrvSizeT rlen);
+
+    ErlDrvSSizeT cancel_accept();
+
 private:
+    struct Acceptor {
+        ErlDrvTermData caller;
+        Binary ref;
+    };
+    typedef std::list<Acceptor> AcceptorQueue;
+
+    AcceptorQueue acceptor_queue;
     SockAddr my_addr;
+    ErlDrvMutex* queue_mutex;
 
     void do_write(byte* bytes, size_t count);
     void do_incoming(UTPSocket* utp);

@@ -23,7 +23,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdexcept>
-#include <string>
 #include "socket_handler.h"
 #include "globals.h"
 #include "utils.h"
@@ -237,10 +236,10 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
 
 void
 UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
-                                        const std::string* extra)
+                                        const ustring* extra)
 {
     ErlDrvSizeT total = 0;
-    std::string str;
+    ustring buf;
     {
         int vlen;
         PdlLocker pdl_lock(pdl);
@@ -256,16 +255,16 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
         if (extra != 0) {
             total += extra->size();
         }
-        str.reserve(total);
+        buf.reserve(total);
         for (int i = 0; i < vlen; ++i) {
-            str.append(vec[i].iov_base, vec[i].iov_len);
+            buf.append(reinterpret_cast<unsigned char*>(vec[i].iov_base), vec[i].iov_len);
         }
         if (extra != 0) {
-            str.append(*extra);
+            buf.append(*extra);
         }
         driver_deq(port, deq_size);
     }
-    ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(str.data());
+    ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(buf.data());
     if (receiver.send_to_connected) {
         ErlDrvTermData term[] = {
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp")),
@@ -296,7 +295,7 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
     send_tmout(-1), active(ACTIVE_FALSE), fd(-1), port(0),
-    delivery_mode(DATA_LIST), inet6(false), addr_set(false)
+    delivery_mode(DATA_LIST), inet6(false), addr_set(false), async_accept(false)
 {
 }
 
@@ -360,10 +359,22 @@ UtpDrv::SocketHandler::SockOpts::decode(const Binary& bin, OptsList* opts_list)
                 opts_list->push_back(UTP_SEND_TMOUT);
             }
             break;
+        case UTP_SEND_TMOUT_INFINITE:
+            send_tmout = -1;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_SEND_TMOUT_INFINITE);
+            }
+            break;
         case UTP_ACTIVE:
             active = static_cast<Active>(*data++);
             if (opts_list != 0) {
                 opts_list->push_back(UTP_ACTIVE);
+            }
+            break;
+        case UTP_ASYNC_ACCEPT:
+            async_accept = static_cast<bool>(*data++);
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_ASYNC_ACCEPT);
             }
             break;
         }
@@ -403,10 +414,14 @@ UtpDrv::SocketHandler::SockOpts::decode_and_merge(const Binary& bin)
             throw std::invalid_argument("inet6");
             break;
         case UTP_SEND_TMOUT:
+        case UTP_SEND_TMOUT_INFINITE:
             send_tmout = so.send_tmout;
             break;
         case UTP_ACTIVE:
             active = so.active;
+            break;
+        case UTP_ASYNC_ACCEPT:
+            async_accept = so.async_accept;
             break;
         }
     }

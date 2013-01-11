@@ -1,6 +1,6 @@
 {application, gen_utp,
  [
-  {description, "uTP Protocol"},
+  {description, "uTP Protocol API and driver"},
   {vsn, "0.2.0"},
   {registered, []},
   {applications, [

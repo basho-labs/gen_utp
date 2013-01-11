@@ -40,10 +40,12 @@
 -type utpsendopt() :: {send_timeout,utptimeout()}.
 -type utpactive() :: once | boolean().
 -type utpactiveopt() :: {active, utpactive()}.
+-type utpasyncaccept() :: {async_accept, boolean()}.
 -type utpopt() :: utpipopt() | utpfdopt() | utpportopt() | utpmodeopt() |
-                  utpfamily() | utpsendopt() | utpactiveopt().
+                  utpfamily() | utpsendopt() | utpactiveopt() |
+                  utpasyncaccept().
 -type utpopts() :: [utpopt()].
--type utpgetoptname() :: active | mode | send_timeout.
+-type utpgetoptname() :: active | mode | send_timeout | async_accept.
 -type utpgetoptnames() :: [utpgetoptname()].
 
 
@@ -133,6 +135,11 @@ validate([{active,Active}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{active=Active});
 validate([{active,_}=Active|_], _) ->
     erlang:error(badarg, [Active]);
+validate([{async_accept,AsyncAccept}|Opts], UtpOpts)
+  when is_boolean(AsyncAccept) ->
+    validate(Opts, UtpOpts#utp_options{async_accept=AsyncAccept});
+validate([{async_accept,_}=Async|_], _) ->
+    erlang:error(badarg, [Async]);
 validate([], UtpOpts) ->
     UtpOpts.
 

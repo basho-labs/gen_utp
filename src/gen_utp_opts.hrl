@@ -30,7 +30,9 @@
 -define(UTP_INET, 7).
 -define(UTP_INET6, 8).
 -define(UTP_SEND_TMOUT, 9).
--define(UTP_ACTIVE, 10).
+-define(UTP_SEND_TMOUT_INFINITE, 10).
+-define(UTP_ACTIVE, 11).
+-define(UTP_ASYNC_ACCEPT, 12).
 
 %% IDs for values of the active option
 -define(UTP_ACTIVE_FALSE, 0).
@@ -44,5 +46,6 @@
           fd :: non_neg_integer(),
           family :: inet | inet6,
           send_tmout :: pos_integer() | infinity,
-          active :: once | boolean()
+          active :: once | boolean(),
+          async_accept :: boolean()
          }).

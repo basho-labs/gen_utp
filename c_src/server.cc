@@ -33,7 +33,6 @@ UtpDrv::Server::Server(int sock, const SockOpts& so) :
 {
     UTPDRV_TRACER << "Server::Server " << this
                   << ", socket " << sock << UTPDRV_TRACE_ENDL;
-    status = connected;
 }
 
 UtpDrv::Server::~Server()

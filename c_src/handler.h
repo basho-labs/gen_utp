@@ -33,6 +33,8 @@ namespace UtpDrv {
 // Command values must match those defined in gen_utp.erl
 enum Commands {
     UTP_LISTEN = 1,
+    UTP_ACCEPT,
+    UTP_CANCEL_ACCEPT,
     UTP_CONNECT_START,
     UTP_CONNECT_VALIDATE,
     UTP_CLOSE,

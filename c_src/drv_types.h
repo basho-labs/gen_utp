@@ -5,7 +5,7 @@
 //
 // drv_types.h: wrap Erlang driver types for uTP driver
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -23,6 +23,7 @@
 //
 // -------------------------------------------------------------------
 
+#include <string>
 #include "erl_driver.h"
 #include "coder.h"
 
@@ -54,6 +55,8 @@ public:
 private:
     ErlDrvBinary* bin;
 };
+
+typedef std::basic_string<unsigned char> ustring;
 
 }
 

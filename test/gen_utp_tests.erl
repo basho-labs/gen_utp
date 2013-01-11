@@ -43,83 +43,85 @@ port_number_test_() ->
      fun cleanup/1,
      fun(_) ->
              {"uTP port number range test",
-              ?_test(
-                 begin
-                     Error = {error, function_clause},
-                     ?assertMatch(Error,
-                                  try gen_utp:listen(-1)
-                                  catch C1:R1 -> {C1,R1} end),
-                     ?assertMatch(Error,
-                                  try gen_utp:listen(65536)
-                                  catch C2:R2 -> {C2,R2} end),
-                     ?assertMatch(Error,
-                                  try gen_utp:connect("localhost", -1)
-                                  catch C3:R3 -> {C3,R3} end),
-                     ?assertMatch(Error,
-                                  try gen_utp:connect("localhost", 0)
-                                  catch C4:R4 -> {C4,R4} end),
-                     ?assertMatch(Error,
-                                  try gen_utp:connect("localhost", 65536)
-                                  catch C5:R5 -> {C5,R5} end)
-                 end)}
+              fun port_number_range/0}
      end}.
+
+port_number_range() ->
+    Error = {error, function_clause},
+    ?assertMatch(Error,
+                 try gen_utp:listen(-1) catch C1:R1 -> {C1,R1} end),
+    ?assertMatch(Error,
+                 try gen_utp:listen(65536) catch C2:R2 -> {C2,R2} end),
+    ?assertMatch(Error,
+                 try gen_utp:connect("localhost", -1)
+                 catch C3:R3 -> {C3,R3} end),
+    ?assertMatch(Error,
+                 try gen_utp:connect("localhost", 0) catch C4:R4 -> {C4,R4} end),
+    ?assertMatch(Error,
+                 try gen_utp:connect("localhost", 65536)
+                 catch C5:R5 -> {C5,R5} end),
+    ok.
 
 listen_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun (_) ->
+     fun(_) ->
              {inorder,
               [{"uTP simple listen test",
-                ?_test(
-                   begin
-                       Ports = length(erlang:ports()),
-                       {ok, LSock} = gen_utp:listen(0),
-                       ?assert(erlang:is_port(LSock)),
-                       ?assertEqual(Ports+1, length(erlang:ports())),
-                       Self = self(),
-                       ?assertMatch({connected, Self},
-                                    erlang:port_info(LSock, connected)),
-                       ?assertMatch({error, enotconn},
-                                    gen_utp:send(LSock, <<"send">>)),
-                       {ok, {Addr, Port}} = gen_utp:sockname(LSock),
-                       ?assert(is_tuple(Addr)),
-                       ?assert(is_number(Port)),
-                       ?assertMatch({error, enotconn}, gen_utp:peername(LSock)),
-                       ?assertMatch(ok, gen_utp:close(LSock)),
-                       ?assertMatch(undefined, erlang:port_info(LSock)),
-                       ?assertEqual(Ports, length(erlang:ports())),
-                       ok
-                   end)},
+                fun simple_listen/0},
                {"uTP two listen test",
-                ?_test(
-                   begin
-                       {ok, LSock1} = gen_utp:listen(0),
-                       {ok, {_, Port}} = gen_utp:sockname(LSock1),
-                       ok = gen_utp:close(LSock1),
-                       {ok, LSock2} = gen_utp:listen(Port),
-                       ok = gen_utp:close(LSock2)
-                   end)},
+                fun two_listen/0},
                {"uTP specific interface listen test",
-                ?_test(
-                   begin
-                       {ok, LSock1} = gen_utp:listen(0, [{ip, "127.0.0.1"}]),
-                       ?assertMatch({ok, {{127,0,0,1}, _}},
-                                    gen_utp:sockname(LSock1)),
-                       ok = gen_utp:close(LSock1),
-                       {ok, LSock2} = gen_utp:listen(0, [{ifaddr, "127.0.0.1"}]),
-                       ?assertMatch({ok, {{127,0,0,1}, _}},
-                                    gen_utp:sockname(LSock2)),
-                       ok = gen_utp:close(LSock2)
-                   end)}
+                fun specific_interface/0}
               ]}
      end}.
+
+simple_listen() ->
+    Ports = length(erlang:ports()),
+    {ok, LSock} = gen_utp:listen(0),
+    ?assert(erlang:is_port(LSock)),
+    ?assertEqual(Ports+1, length(erlang:ports())),
+    Self = self(),
+    ?assertMatch({connected, Self}, erlang:port_info(LSock, connected)),
+    ?assertMatch({error, enotconn}, gen_utp:send(LSock, <<"send">>)),
+    {ok, {Addr, Port}} = gen_utp:sockname(LSock),
+    ?assert(is_tuple(Addr)),
+    ?assert(is_number(Port)),
+    ?assertMatch({error, enotconn}, gen_utp:peername(LSock)),
+    ?assertMatch(ok, gen_utp:close(LSock)),
+    ?assertMatch(undefined, erlang:port_info(LSock)),
+    ?assertEqual(Ports, length(erlang:ports())),
+    ok.
+
+two_listen() ->
+    {ok, LSock1} = gen_utp:listen(0),
+    {ok, {_, Port1}} = gen_utp:sockname(LSock1),
+    ?assertMatch(ok, gen_utp:close(LSock1)),
+    {ok, LSock2} = gen_utp:listen(Port1),
+    ?assertNotEqual(LSock1, LSock2),
+    {ok, {_, Port2}} = gen_utp:sockname(LSock2),
+    ?assertEqual(Port1, Port2),
+    {ok, LSock3} = gen_utp:listen(0),
+    {ok, {_, Port3}} = gen_utp:sockname(LSock3),
+    ?assertNotEqual(Port2, Port3),
+    ?assertMatch(ok, gen_utp:close(LSock2)),
+    ok.
+
+specific_interface() ->
+    {ok, LSock1} = gen_utp:listen(0, [{ip, "127.0.0.1"}]),
+    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock1)),
+    ok = gen_utp:close(LSock1),
+    {ok, LSock2} = gen_utp:listen(0, [{ifaddr, "127.0.0.1"}]),
+    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock2)),
+    ?assertMatch(ok, gen_utp:close(LSock2)),
+    ok.
 
 client_timeout_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun (_) ->
+     fun(_) ->
              {timeout, 15,
               [{"uTP client timeout test",
                 ?_test(
@@ -137,82 +139,40 @@ client_server_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun (_) ->
+     fun(_) ->
              {inorder,
               [{"uTP simple connect test",
-                ?_test(
-                   begin
-                       Self = self(),
-                       Ref = make_ref(),
-                       spawn_link(fun() ->
-                                          ok = simple_connect_server(Self, Ref)
-                                  end),
-                       ok = simple_connect_client(Ref)
-                   end)},
+                fun simple_connect/0},
                {"uTP simple send binary test",
-                ?_test(
-                   begin
-                       Self = self(),
-                       Ref = make_ref(),
-                       spawn_link(fun() ->
-                                          ok = simple_send_server(Self, Ref)
-                                  end),
-                       ok = simple_send_client(Ref, binary)
-                   end)},
+                fun() -> simple_send(binary) end},
                {"uTP simple send list test",
-                ?_test(
-                   begin
-                       Self = self(),
-                       Ref = make_ref(),
-                       spawn_link(fun() ->
-                                          ok = simple_send_server(Self, Ref)
-                                  end),
-                       ok = simple_send_client(Ref, list)
-                   end)},
+                fun() -> simple_send(list) end},
                {"uTP two clients test",
-                ?_test(
-                   begin
-                       Self = self(),
-                       Ref = make_ref(),
-                       spawn_link(fun() ->
-                                          ok = two_client_server(Self, Ref)
-                                  end),
-                       ok = two_clients(Ref)
-                   end)},
+                fun two_clients/0},
                {"uTP client large send",
-                ?_test(
-                   begin
-                       Self = self(),
-                       Ref = make_ref(),
-                       Bin = list_to_binary(lists:duplicate(1000000, $A)),
-                       spawn_link(fun() ->
-                                          ok = large_send_server(Self, Ref, Bin)
-                                  end),
-                       ok = large_send_client(Ref, Bin)
-                   end)},
+                fun large_send/0},
                {"uTP two servers test",
-                ?_test(
-                   begin
-                       Self = self(),
-                       Ref = make_ref(),
-                       spawn_link(fun() ->
-                                          ok = two_servers(Self, Ref)
-                                  end),
-                       ok = two_server_client(Ref)
-                   end)}
+                fun two_servers/0}
               ]}
      end}.
 
+simple_connect() ->
+    Self = self(),
+    Ref = make_ref(),
+    spawn_link(fun() -> ok = simple_connect_server(Self, Ref) end),
+    ok = simple_connect_client(Ref),
+    ok.
+
 simple_connect_server(Client, Ref) ->
-    Opts = [{active,true}, {mode,binary}],
+    Opts = [{active,true}, {mode,binary}, {async_accept,true}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     receive
         {utp_async, Sock, {Addr, Port}} ->
-            true = is_port(Sock),
-            true = is_tuple(Addr),
-            true = is_number(Port),
-            ok = gen_utp:close(Sock)
+            ?assertMatch(true, is_port(Sock)),
+            ?assertMatch(true, is_tuple(Addr)),
+            ?assertMatch(true, is_number(Port)),
+            ?assertMatch(ok, gen_utp:close(Sock))
     after
         3000 -> exit(failure)
     end,
@@ -225,9 +185,8 @@ simple_connect_client(Ref) ->
         {ok, {_, LPort}} ->
             Opts = [{active,true}, {mode,binary}],
             {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, Opts),
-            true = erlang:is_port(Sock),
-            Self = self(),
-            {connected, Self} = erlang:port_info(Sock, connected),
+            ?assertMatch(true, erlang:is_port(Sock)),
+            ?assertEqual({connected, self()}, erlang:port_info(Sock, connected)),
             ok = gen_utp:close(Sock),
             receive
                 {done, Ref} -> ok
@@ -239,21 +198,29 @@ simple_connect_client(Ref) ->
     end,
     ok.
 
-simple_send_server(Client, Ref) ->
-    Opts = [{active,true}, {mode,binary}],
+simple_send(Mode) ->
+    Self = self(),
+    Ref = make_ref(),
+    spawn_link(fun() -> ok = simple_send_server(Self, Ref, Mode) end),
+    ok = simple_send_client(Ref, Mode),
+    ok.
+
+simple_send_server(Client, Ref, Mode) ->
+    Opts = [{active,true}, {mode,Mode}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
+    {ok, Sock} = gen_utp:accept(LSock, 2000),
     receive
-        {utp_async, Sock, {_Addr, _Port}} ->
-            receive
-                {utp, Sock, <<"simple send client">>} ->
-                    ok = gen_utp:send(Sock, <<"simple send server">>);
-                Error ->
-                    exit(Error)
-            after
-                5000 -> exit(failure)
+        {utp, Sock, SentVal} ->
+            case Mode of
+                binary ->
+                    ?assertMatch(<<"simple send client">>, SentVal);
+                list ->
+                    ?assertMatch("simple send client", SentVal)
             end,
-            ok = gen_utp:close(Sock)
+            ok = gen_utp:send(Sock, <<"simple send server">>);
+        Error ->
+            exit(Error)
     after
         5000 -> exit(failure)
     end,
@@ -271,9 +238,9 @@ simple_send_client(Ref, Mode) ->
                 {utp, Sock, Reply} ->
                     case Mode of
                         binary ->
-                            ?assertMatch(Reply, <<"simple send server">>);
+                            ?assertMatch(<<"simple send server">>, Reply);
                         list ->
-                            ?assertMatch(Reply, "simple send server")
+                            ?assertMatch("simple send server", Reply)
                     end,
                     receive
                         {done, Ref} -> ok
@@ -289,35 +256,34 @@ simple_send_client(Ref, Mode) ->
     end,
     ok.
 
+two_clients() ->
+    Self = self(),
+    Ref = make_ref(),
+    spawn_link(fun() -> ok = two_client_server(Self, Ref) end),
+    ok = two_clients(Ref),
+    ok.
+
 two_client_server(Client, Ref) ->
     Opts = [{active,true}, {mode,binary}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
+    {ok, Sock1} = gen_utp:accept(LSock, 2000),
     receive
-        {utp_async, Sock1, {_Addr1, _Port1}} ->
+        {utp, Sock1, <<"client1">>} ->
+            ok = gen_utp:send(Sock1, <<"client1">>),
+            {ok, Sock2} = gen_utp:accept(LSock, 2000),
             receive
-                {utp, Sock1, <<"client1">>} ->
-                    ok = gen_utp:send(Sock1, <<"client1">>),
-                    receive
-                        {utp_async, Sock2, {_Addr2, _Port2}} ->
-                            receive
-                                {utp, Sock2, <<"client2">>} ->
-                                    ok = gen_utp:send(Sock2, <<"client2">>),
-                                    ok = gen_utp:close(Sock2);
-                                Error ->
-                                    exit(Error)
-                            after
-                                5000 -> exit(failure)
-                            end
-                    after
-                        5000 -> exit(failure)
-                    end,
-                    ok = gen_utp:close(Sock1);
+                {utp, Sock2, <<"client2">>} ->
+                    ok = gen_utp:send(Sock2, <<"client2">>),
+                    ok = gen_utp:close(Sock2);
                 Error ->
                     exit(Error)
             after
                 5000 -> exit(failure)
-            end
+            end,
+            ok = gen_utp:close(Sock1);
+        Error ->
+            exit(Error)
     after
         5000 -> exit(failure)
     end,
@@ -355,18 +321,22 @@ two_clients(Ref) ->
     end,
     ok.
 
+large_send() ->
+    Self = self(),
+    Ref = make_ref(),
+    Bin = list_to_binary(lists:duplicate(1000000, $A)),
+    spawn_link(fun() -> ok = large_send_server(Self, Ref, Bin) end),
+    ok = large_send_client(Ref, Bin),
+    ok.
+
 large_send_server(Client, Ref, Bin) ->
     Opts = [{active,true}, {mode,binary}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
-    receive
-        {utp_async, Sock, {_Addr, _Port}} ->
-            Bin = large_receive(Sock, byte_size(Bin)),
-            ok = gen_utp:send(Sock, <<"large send server">>),
-            ok = gen_utp:close(Sock)
-    after
-        5000 -> exit(failure)
-    end,
+    {ok, Sock} = gen_utp:accept(LSock, 2000),
+    Bin = large_receive(Sock, byte_size(Bin)),
+    ok = gen_utp:send(Sock, <<"large send server">>),
+    ok = gen_utp:close(Sock),
     ok = gen_utp:close(LSock),
     Client ! {done, Ref},
     ok.
@@ -409,8 +379,15 @@ large_send_client(Ref, Bin) ->
     end,
     ok.
 
+two_servers() ->
+    Self = self(),
+    Ref = make_ref(),
+    spawn_link(fun() -> ok = two_servers(Self, Ref) end),
+    ok = two_server_client(Ref),
+    ok.
+
 two_servers(Client, Ref) ->
-    {ok, LSock} = gen_utp:listen(0, [{active,true}]),
+    {ok, LSock} = gen_utp:listen(0, [{active,true},{async_accept,true}]),
     {ok, Sockname} = gen_utp:sockname(LSock),
     Client ! {Ref, Sockname},
     Self = self(),

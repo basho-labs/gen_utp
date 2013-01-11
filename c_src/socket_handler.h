@@ -53,6 +53,7 @@ struct SockAddr {
     int family() const;
     ErlDrvSSizeT encode(char** rbuf, ErlDrvSizeT rlen) const;
     bool operator<(const SockAddr& sa) const;
+    bool operator==(const SockAddr& sa) const { return !(*this < sa || sa < *this); }
     operator sockaddr*();
     operator const sockaddr*() const;
 };
@@ -62,6 +63,7 @@ class SocketHandler : public Handler
 public:
     ~SocketHandler();
 
+    // the following enums must match option values in gen_utp_opts.hrl
     enum Opts {
         UTP_IP = 1,
         UTP_FD,
@@ -72,7 +74,9 @@ public:
         UTP_INET,
         UTP_INET6,
         UTP_SEND_TMOUT,
-        UTP_ACTIVE
+        UTP_SEND_TMOUT_INFINITE,
+        UTP_ACTIVE,
+        UTP_ASYNC_ACCEPT
     };
     typedef std::vector<Opts> OptsList;
 
@@ -97,9 +101,10 @@ public:
         DeliveryMode delivery_mode;
         bool inet6;
         bool addr_set;
+        bool async_accept;
     };
 
-    void set_port(ErlDrvPort p);
+    virtual void set_port(ErlDrvPort p);
 
     static int
     open_udp_socket(int& udp_sock, unsigned short port = 0,
@@ -148,7 +153,7 @@ protected:
 
     void
     send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
-                     const std::string* extra_data = 0);
+                     const ustring* extra_data = 0);
 
     SockOpts sockopts;
     ErlDrvPDL pdl;

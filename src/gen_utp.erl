@@ -30,7 +30,7 @@
 -endif.
 
 -export([start_link/0, start/0, stop/0,
-         listen/1, listen/2,
+         listen/1, listen/2, accept/1, accept/2,
          connect/2, connect/3,
          close/1, send/2, recv/2, recv/3,
          sockname/1, peername/1,
@@ -45,16 +45,18 @@
 
 %% driver command IDs
 -define(UTP_LISTEN, 1).
--define(UTP_CONNECT_START, 2).
--define(UTP_CONNECT_VALIDATE, 3).
--define(UTP_CLOSE, 4).
--define(UTP_SOCKNAME, 5).
--define(UTP_PEERNAME, 6).
--define(UTP_SETOPTS, 7).
--define(UTP_GETOPTS, 8).
--define(UTP_CANCEL_SEND, 9).
--define(UTP_RECV, 10).
--define(UTP_CANCEL_RECV, 11).
+-define(UTP_ACCEPT, 2).
+-define(UTP_CANCEL_ACCEPT, 3).
+-define(UTP_CONNECT_START, 4).
+-define(UTP_CONNECT_VALIDATE, 5).
+-define(UTP_CLOSE, 6).
+-define(UTP_SOCKNAME, 7).
+-define(UTP_PEERNAME, 8).
+-define(UTP_SETOPTS, 9).
+-define(UTP_GETOPTS, 10).
+-define(UTP_CANCEL_SEND, 11).
+-define(UTP_RECV, 12).
+-define(UTP_CANCEL_RECV, 13).
 
 -type utpstate() :: #state{}.
 -type from() :: {pid(), any()}.
@@ -91,6 +93,42 @@ listen(Port, Options) when Port >= 0, Port < 65536 ->
         receive
             {Ref, Result} ->
                 Result
+        end
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
+
+-spec accept(utpsock()) -> {ok, utpsock()} | {error, any()}.
+accept(Sock) ->
+    accept(Sock, infinity).
+
+-spec accept(utpsock(), timeout()) -> {ok, utpsock()} | {error, any()}.
+accept(Sock, Timeout) ->
+    try
+        Ref = make_ref(),
+        Args = term_to_binary(term_to_binary(Ref)),
+        Result = erlang:port_control(Sock, ?UTP_ACCEPT, Args),
+        case binary_to_term(Result) of
+            ok ->
+                receive
+                    {utp_async, NewSock, Ref} ->
+                        {ok, NewSock}
+                after
+                    Timeout ->
+                        erlang:port_control(Sock, ?UTP_CANCEL_ACCEPT, <<>>),
+                        %% if the reply comes back while the cancel
+                        %% call completes, return it
+                        receive
+                            {utp_async, NewSock, Ref} ->
+                                {ok, NewSock}
+                        after
+                            0 ->
+                                {error, etimedout}
+                        end
+                end;
+            Error ->
+                Error
         end
     catch
         _:Reason ->
@@ -188,7 +226,7 @@ recv(Sock, Length, Timeout) ->
                         Reply
                 after
                     Timeout ->
-                        erlang:port_control(Sock,?UTP_CANCEL_RECV,<<>>),
+                        erlang:port_control(Sock, ?UTP_CANCEL_RECV, <<>>),
                         %% if the reply comes back while the cancel
                         %% call completes, return it
                         receive
@@ -438,7 +476,7 @@ options_to_binary(UtpOpts) ->
                         undefined ->
                             <<>>;
                         list ->
-                            <<>>;
+                            <<?UTP_LIST:8>>;
                         binary ->
                             <<?UTP_BINARY:8>>
                     end,
@@ -469,10 +507,10 @@ options_to_binary(UtpOpts) ->
                             <<?UTP_FD:8, Fd:32/big>>
                     end,
                     case UtpOpts#utp_options.send_tmout of
-                        infinity ->
-                            <<>>;
                         undefined ->
                             <<>>;
+                        infinity ->
+                            <<?UTP_SEND_TMOUT_INFINITE:8>>;
                         Tm ->
                             <<?UTP_SEND_TMOUT:8, Tm:32/big>>
                     end,
@@ -480,10 +518,18 @@ options_to_binary(UtpOpts) ->
                         undefined ->
                             <<>>;
                         false ->
-                            <<>>;
+                            <<?UTP_ACTIVE:8, ?UTP_ACTIVE_FALSE:8>>;
                         once ->
                             <<?UTP_ACTIVE:8, ?UTP_ACTIVE_ONCE:8>>;
                         true ->
                             <<?UTP_ACTIVE:8, ?UTP_ACTIVE_TRUE:8>>
+                    end,
+                    case UtpOpts#utp_options.async_accept of
+                        undefined ->
+                            <<>>;
+                        false ->
+                            <<?UTP_ASYNC_ACCEPT:8, 0:8>>;
+                        true ->
+                            <<?UTP_ASYNC_ACCEPT:8, 1:8>>
                     end
                    ]).

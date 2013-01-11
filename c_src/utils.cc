@@ -26,6 +26,7 @@
 #include "globals.h"
 #include "main_handler.h"
 #include "utp_handler.h"
+#include "locker.h"
 
 
 using namespace UtpDrv;

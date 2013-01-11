@@ -126,8 +126,9 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
         return;
     }
 
-    ErlDrvTermData local_caller = driver_caller(port);
-    ErlDrvTermData utp_reply = driver_mk_atom(const_cast<char*>("utp_reply"));
+    ErlDrvTermData local_caller, utp_reply;
+    local_caller = driver_caller(port);
+    utp_reply = driver_mk_atom(const_cast<char*>("utp_reply"));
     if (writable) {
         if (ev.size > 0) {
             MutexLocker lock(write_q_mutex);
@@ -290,20 +291,22 @@ UtpDrv::UtpHandler::recv(const char* buf, ErlDrvSizeT len,
             int vlen;
             SysIOVec* vec = driver_peekq(port, &vlen);
             size_t total = 0;
-            std::string buf;
+            ustring buf;
             buf.reserve(length+1);
             for (int i = 0; i < vlen; ++i) {
+                char* p = vec[i].iov_base;
+                unsigned char* uc = reinterpret_cast<unsigned char*>(p);
                 if (total + vec[i].iov_len <= length) {
-                    buf.append(vec[i].iov_base, vec[i].iov_len);
+                    buf.append(uc, vec[i].iov_len);
                     total += vec[i].iov_len;
                 } else {
-                    buf.append(vec[i].iov_base, length - total);
+                    buf.append(uc, length - total);
                     break;
                 }
             }
             driver_deq(port, length);
             if (sockopts.delivery_mode == DATA_LIST) {
-                encoder.string(buf.c_str());
+                encoder.string(reinterpret_cast<const char*>(buf.c_str()));
             } else {
                 encoder.binary(buf.data(), total);
             }
@@ -399,7 +402,7 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
                 cancel_recv();
             }
         } else {
-            std::string data(buf, count);
+            ustring data(reinterpret_cast<unsigned char*>(buf), count);
             Receiver rcvr;
             send_read_buffer(0, rcvr, &data);
         }

@@ -284,7 +284,7 @@ UtpDrv::MainHandler::connect_start(const char* buf, ErlDrvSizeT len,
     }
     if (err != 0) {
         ErlDrvTermData term[] = {
-            ERL_DRV_EXT2TERM, ref, ref.size(),
+            ERL_DRV_EXT2TERM, ref, bin_size,
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
             ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
             ERL_DRV_TUPLE, 2,
