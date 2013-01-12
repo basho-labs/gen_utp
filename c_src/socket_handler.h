@@ -151,7 +151,7 @@ protected:
         bool send_to_connected;
     };
 
-    void
+    ErlDrvSizeT
     send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
                      const ustring* extra_data = 0);
 

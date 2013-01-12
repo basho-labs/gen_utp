@@ -388,9 +388,9 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
 {
     UTPDRV_TRACER << "UtpHandler::do_read " << this << UTPDRV_TRACE_ENDL;
     if (count != 0) {
+        ErlDrvSizeT qsize;
         char* buf = const_cast<char*>(reinterpret_cast<const char*>(bytes));
         if (sockopts.active == ACTIVE_FALSE) {
-            ErlDrvSizeT qsize;
             {
                 PdlLocker pdl_lock(pdl);
                 driver_enq(port, buf, count);
@@ -398,13 +398,16 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
             }
             if (receiver_waiting &&  qsize >= recv_len) {
                 Receiver rcvr(false, caller, caller_ref);
-                send_read_buffer(recv_len, rcvr);
+                qsize = send_read_buffer(recv_len, rcvr);
                 cancel_recv();
             }
         } else {
             ustring data(reinterpret_cast<unsigned char*>(buf), count);
             Receiver rcvr;
-            send_read_buffer(0, rcvr, &data);
+            qsize = send_read_buffer(0, rcvr, &data);
+        }
+        if (qsize == 0) {
+            UTP_RBDrained(utp);
         }
     }
 }

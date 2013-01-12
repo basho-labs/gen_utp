@@ -234,11 +234,11 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
     return encoder.copy_to_binary(binptr, rlen);
 }
 
-void
+ErlDrvSizeT
 UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
                                         const ustring* extra)
 {
-    ErlDrvSizeT total = 0;
+    ErlDrvSizeT total = 0, retval;
     ustring buf;
     {
         int vlen;
@@ -263,6 +263,7 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
             buf.append(*extra);
         }
         driver_deq(port, deq_size);
+        retval = driver_sizeq(port);
     }
     ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(buf.data());
     if (receiver.send_to_connected) {
@@ -291,6 +292,7 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
     if (sockopts.active == ACTIVE_ONCE) {
         sockopts.active = ACTIVE_FALSE;
     }
+    return retval;
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
