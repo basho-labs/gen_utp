@@ -33,7 +33,7 @@
          listen/1, listen/2, accept/1, accept/2,
          connect/2, connect/3,
          close/1, send/2, recv/2, recv/3,
-         sockname/1, peername/1,
+         sockname/1, peername/1, port/1,
          setopts/2, getopts/2,
          controlling_process/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -263,6 +263,15 @@ peername(Sock) ->
         {ok, {AddrStr, Port}} ->
             {ok, Addr} = inet_parse:address(AddrStr),
             {ok, {Addr, Port}};
+        Error ->
+            Error
+    end.
+
+-spec port(utpsock()) -> {ok, utpport()} | {error, any()}.
+port(Sock) ->
+    case sockname(Sock) of
+        {ok, {_Addr, Port}} ->
+            {ok, Port};
         Error ->
             Error
     end.

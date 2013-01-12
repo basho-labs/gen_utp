@@ -88,6 +88,7 @@ simple_listen() ->
     {ok, {Addr, Port}} = gen_utp:sockname(LSock),
     ?assert(is_tuple(Addr)),
     ?assert(is_number(Port)),
+    ?assertEqual({ok, Port}, gen_utp:port(LSock)),
     ?assertMatch({error, enotconn}, gen_utp:peername(LSock)),
     ?assertMatch(ok, gen_utp:close(LSock)),
     ?assertMatch(undefined, erlang:port_info(LSock)),
