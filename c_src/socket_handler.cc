@@ -192,7 +192,7 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
         encoder.list_header(end-opt);
         while (opt != end) {
             switch (*opt++) {
-            case UTP_ACTIVE:
+            case UTP_ACTIVE_OPT:
                 encoder.tuple_header(2).atom("active");
                 if (sockopts.active == ACTIVE_FALSE) {
                     encoder.atom("false");
@@ -202,7 +202,7 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
                     encoder.atom("once");
                 }
                 break;
-            case UTP_MODE:
+            case UTP_MODE_OPT:
                 encoder.tuple_header(2).atom("mode");
                 if (sockopts.delivery_mode == DATA_LIST) {
                     encoder.atom("list");
@@ -210,7 +210,7 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
                     encoder.atom("binary");
                 }
                 break;
-            case UTP_SEND_TMOUT:
+            case UTP_SEND_TMOUT_OPT:
                 encoder.tuple_header(2).atom("send_timeout");
                 if (sockopts.send_tmout == -1) {
                     encoder.atom("infinity");
@@ -297,7 +297,7 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
     send_tmout(-1), active(ACTIVE_FALSE), fd(-1), port(0),
-    delivery_mode(DATA_LIST), inet6(false), addr_set(false), async_accept(false)
+    delivery_mode(DATA_LIST), inet6(false), addr_set(false)
 {
 }
 
@@ -308,75 +308,62 @@ UtpDrv::SocketHandler::SockOpts::decode(const Binary& bin, OptsList* opts_list)
     const char* end = data + bin.size();
     while (data < end) {
         switch (*data++) {
-        case UTP_IP:
+        case UTP_IP_OPT:
             strcpy(addrstr, data);
             data += strlen(data) + 1;
             addr_set = true;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_IP);
+                opts_list->push_back(UTP_IP_OPT);
             }
             break;
-        case UTP_FD:
-            fd = ntohl(*reinterpret_cast<const uint32_t*>(data));
-            data += 4;
-            if (opts_list != 0) {
-                opts_list->push_back(UTP_FD);
-            }
-            break;
-        case UTP_PORT:
+        case UTP_PORT_OPT:
             port = ntohs(*reinterpret_cast<const uint16_t*>(data));
             data += 2;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_PORT);
+                opts_list->push_back(UTP_PORT_OPT);
             }
             break;
-        case UTP_LIST:
+        case UTP_LIST_OPT:
             delivery_mode = DATA_LIST;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_LIST);
+                opts_list->push_back(UTP_LIST_OPT);
             }
             break;
-        case UTP_BINARY:
+        case UTP_BINARY_OPT:
             delivery_mode = DATA_BINARY;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_BINARY);
+                opts_list->push_back(UTP_BINARY_OPT);
             }
             break;
-        case UTP_INET:
+        case UTP_INET_OPT:
             inet6 = false;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_INET);
+                opts_list->push_back(UTP_INET_OPT);
             }
             break;
-        case UTP_INET6:
+        case UTP_INET6_OPT:
             inet6 = true;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_INET6);
+                opts_list->push_back(UTP_INET6_OPT);
             }
             break;
-        case UTP_SEND_TMOUT:
+        case UTP_SEND_TMOUT_OPT:
             send_tmout = ntohl(*reinterpret_cast<const int32_t*>(data));
             data += 4;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_SEND_TMOUT);
+                opts_list->push_back(UTP_SEND_TMOUT_OPT);
             }
             break;
-        case UTP_SEND_TMOUT_INFINITE:
+        case UTP_SEND_TMOUT_INFINITE_OPT:
             send_tmout = -1;
             if (opts_list != 0) {
-                opts_list->push_back(UTP_SEND_TMOUT_INFINITE);
+                opts_list->push_back(UTP_SEND_TMOUT_INFINITE_OPT);
             }
             break;
-        case UTP_ACTIVE:
+        case UTP_ACTIVE_OPT:
             active = static_cast<Active>(*data++);
             if (opts_list != 0) {
-                opts_list->push_back(UTP_ACTIVE);
-            }
-            break;
-        case UTP_ASYNC_ACCEPT:
-            async_accept = static_cast<bool>(*data++);
-            if (opts_list != 0) {
-                opts_list->push_back(UTP_ASYNC_ACCEPT);
+                opts_list->push_back(UTP_ACTIVE_OPT);
             }
             break;
         }
@@ -395,35 +382,29 @@ UtpDrv::SocketHandler::SockOpts::decode_and_merge(const Binary& bin)
     OptsList::iterator it = opts.begin();
     while (it != opts.end()) {
         switch (*it++) {
-        case UTP_IP:
+        case UTP_IP_OPT:
             throw std::invalid_argument("ip");
             break;
-        case UTP_FD:
-            throw std::invalid_argument("fd");
-            break;
-        case UTP_PORT:
+        case UTP_PORT_OPT:
             throw std::invalid_argument("port");
             break;
-        case UTP_LIST:
-        case UTP_BINARY:
-        case UTP_MODE:
+        case UTP_LIST_OPT:
+        case UTP_BINARY_OPT:
+        case UTP_MODE_OPT:
             delivery_mode = so.delivery_mode;
             break;
-        case UTP_INET:
+        case UTP_INET_OPT:
             throw std::invalid_argument("inet");
             break;
-        case UTP_INET6:
+        case UTP_INET6_OPT:
             throw std::invalid_argument("inet6");
             break;
-        case UTP_SEND_TMOUT:
-        case UTP_SEND_TMOUT_INFINITE:
+        case UTP_SEND_TMOUT_OPT:
+        case UTP_SEND_TMOUT_INFINITE_OPT:
             send_tmout = so.send_tmout;
             break;
-        case UTP_ACTIVE:
+        case UTP_ACTIVE_OPT:
             active = so.active;
-            break;
-        case UTP_ASYNC_ACCEPT:
-            async_accept = so.async_accept;
             break;
         }
     }

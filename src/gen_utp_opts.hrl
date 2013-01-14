@@ -21,18 +21,16 @@
 %% -------------------------------------------------------------------
 
 %% IDs for binary-encoded options
--define(UTP_IP, 1).
--define(UTP_FD, 2).
--define(UTP_PORT, 3).
--define(UTP_LIST, 4).
--define(UTP_BINARY, 5).
--define(UTP_MODE, 6).
--define(UTP_INET, 7).
--define(UTP_INET6, 8).
--define(UTP_SEND_TMOUT, 9).
--define(UTP_SEND_TMOUT_INFINITE, 10).
--define(UTP_ACTIVE, 11).
--define(UTP_ASYNC_ACCEPT, 12).
+-define(UTP_IP_OPT, 1).
+-define(UTP_PORT_OPT, 2).
+-define(UTP_LIST_OPT, 3).
+-define(UTP_BINARY_OPT, 4).
+-define(UTP_MODE_OPT, 5).
+-define(UTP_INET_OPT, 6).
+-define(UTP_INET6_OPT, 7).
+-define(UTP_SEND_TMOUT_OPT, 8).
+-define(UTP_SEND_TMOUT_INFINITE_OPT, 9).
+-define(UTP_ACTIVE_OPT, 10).
 
 %% IDs for values of the active option
 -define(UTP_ACTIVE_FALSE, 0).
@@ -43,9 +41,7 @@
           mode :: list | binary,
           ip :: string(),
           port :: gen_utp:utpport(),
-          fd :: non_neg_integer(),
           family :: inet | inet6,
           send_tmout :: pos_integer() | infinity,
-          active :: once | boolean(),
-          async_accept :: boolean()
+          active :: once | boolean()
          }).

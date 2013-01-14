@@ -73,7 +73,11 @@ listen_test_() ->
                {"uTP two listen test",
                 fun two_listen/0},
                {"uTP specific interface listen test",
-                fun specific_interface/0}
+                fun specific_interface/0},
+               {"uTP async accept test",
+                fun async_accept/0},
+               {"uTP accept timeout test",
+                fun accept_timeout/0}
               ]}
      end}.
 
@@ -112,10 +116,26 @@ two_listen() ->
 specific_interface() ->
     {ok, LSock1} = gen_utp:listen(0, [{ip, "127.0.0.1"}]),
     ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock1)),
-    ok = gen_utp:close(LSock1),
+    ?assertMatch(ok, gen_utp:close(LSock1)),
     {ok, LSock2} = gen_utp:listen(0, [{ifaddr, "127.0.0.1"}]),
     ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock2)),
     ?assertMatch(ok, gen_utp:close(LSock2)),
+    {ok, LSock3} = gen_utp:listen(0, [{ip, {127,0,0,1}}]),
+    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock3)),
+    ?assertMatch(ok, gen_utp:close(LSock3)),
+    {ok, LSock4} = gen_utp:listen(0, [{ifaddr, {127,0,0,1}}]),
+    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock4)),
+    ?assertMatch(ok, gen_utp:close(LSock4)),
+    ok.
+
+async_accept() ->
+    {ok, LSock} = gen_utp:listen(0),
+    ?assertMatch(ok, gen_utp:async_accept(LSock)),
+    ok.
+
+accept_timeout() ->
+    {ok, LSock} = gen_utp:listen(0),
+    ?assertMatch({error, etimedout}, gen_utp:accept(LSock, 2000)),
     ok.
 
 client_timeout_test_() ->
@@ -153,7 +173,11 @@ client_server_test_() ->
                {"uTP client large send",
                 fun large_send/0},
                {"uTP two servers test",
-                fun two_servers/0}
+                fun two_servers/0},
+               {"uTP send timeout test",
+                fun send_timeout/0},
+               {"uTP invalid accept test",
+                fun invalid_accept/0}
               ]}
      end}.
 
@@ -165,9 +189,10 @@ simple_connect() ->
     ok.
 
 simple_connect_server(Client, Ref) ->
-    Opts = [{active,true}, {mode,binary}, {async_accept,true}],
+    Opts = [{active,true}, {mode,binary}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
+    ok = gen_utp:async_accept(LSock),
     receive
         {utp_async, Sock, {Addr, Port}} ->
             ?assertMatch(true, is_port(Sock)),
@@ -185,7 +210,7 @@ simple_connect_client(Ref) ->
     receive
         {ok, {_, LPort}} ->
             Opts = [{active,true}, {mode,binary}],
-            {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, Opts),
+            {ok, Sock} = gen_utp:connect({127,0,0,1}, LPort, Opts),
             ?assertMatch(true, erlang:is_port(Sock)),
             ?assertEqual({connected, self()}, erlang:port_info(Sock, connected)),
             ok = gen_utp:close(Sock),
@@ -388,9 +413,10 @@ two_servers() ->
     ok.
 
 two_servers(Client, Ref) ->
-    {ok, LSock} = gen_utp:listen(0, [{active,true},{async_accept,true}]),
+    {ok, LSock} = gen_utp:listen(0, [{active,true}]),
     {ok, Sockname} = gen_utp:sockname(LSock),
     Client ! {Ref, Sockname},
+    ok = gen_utp:async_accept(LSock),
     Self = self(),
     Pid1 = spawn_link(fun() -> two_servers_do_server(Self) end),
     Pid2 = spawn_link(fun() -> two_servers_do_server(Self) end),
@@ -401,6 +427,7 @@ two_servers(Client, Ref) ->
     after
         5000 -> exit(failure)
     end,
+    ok = gen_utp:async_accept(LSock),
     receive
         {utp_async, Sock2, {_, _}} ->
             ok = gen_utp:controlling_process(Sock2, Pid2),
@@ -484,3 +511,51 @@ two_server_client_receive(Sock, Msg) ->
         5000 -> exit(failure)
     end,
     ok = gen_utp:close(Sock).
+
+send_timeout() ->
+    {ok, LSock} = gen_utp:listen(0),
+    {ok, {_, Port}} = gen_utp:sockname(LSock),
+    ok = gen_utp:async_accept(LSock),
+    Pid = spawn(fun() ->
+                        {ok,_} = gen_utp:connect("localhost", Port),
+                        receive
+                            exit ->
+                                ok
+                        end
+                end),
+    receive
+        {utp_async, S, _} ->
+            Pid ! exit,
+            ok = gen_utp:send(S, lists:duplicate(1000, $X)),
+            ?assertMatch(ok, gen_utp:setopts(S, [{send_timeout, 1}])),
+            ?assertMatch({error,etimedout},
+                         gen_utp:send(S, lists:duplicate(1000, $Y))),
+            ok = gen_utp:close(S)
+    after
+        2000 ->
+            exit(failure)
+    end,
+    ok = gen_utp:close(LSock).
+
+invalid_accept() ->
+    {ok, LSock} = gen_utp:listen(0),
+    {ok, {_, Port}} = gen_utp:sockname(LSock),
+    ok = gen_utp:async_accept(LSock),
+    Pid = spawn(fun() ->
+                        {ok,_} = gen_utp:connect("localhost", Port),
+                        receive
+                            exit ->
+                                ok
+                        end
+                end),
+    receive
+        {utp_async, S, _} ->
+            ?assertMatch({error,einval}, gen_utp:accept(S)),
+            ok = gen_utp:close(S)
+    after
+        2000 ->
+            exit(failure)
+    end,
+    ok = gen_utp:close(LSock).
+
+

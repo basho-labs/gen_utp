@@ -34,18 +34,15 @@
 -type utptimeout() :: pos_integer() | infinity.
 -type utpfamily() :: inet | inet6.
 -type utpipopt() :: {ip,gen_utp:utpaddr()} | {ifaddr,gen_utp:utpaddr()}.
--type utpfdopt() :: {fd,non_neg_integer()}.
 -type utpportopt() :: {port,gen_utp:utpport()}.
 -type utpmodeopt() :: {mode,utpmode()} | utpmode().
 -type utpsendopt() :: {send_timeout,utptimeout()}.
 -type utpactive() :: once | boolean().
 -type utpactiveopt() :: {active, utpactive()}.
--type utpasyncaccept() :: {async_accept, boolean()}.
--type utpopt() :: utpipopt() | utpfdopt() | utpportopt() | utpmodeopt() |
-                  utpfamily() | utpsendopt() | utpactiveopt() |
-                  utpasyncaccept().
+-type utpopt() :: utpipopt() | utpportopt() | utpmodeopt() |
+                  utpfamily() | utpsendopt() | utpactiveopt().
 -type utpopts() :: [utpopt()].
--type utpgetoptname() :: active | mode | send_timeout | async_accept.
+-type utpgetoptname() :: active | mode | send_timeout.
 -type utpgetoptnames() :: [utpgetoptname()].
 
 
@@ -58,11 +55,11 @@ validate_names(OptNames) when is_list(OptNames) ->
     Result = lists:foldl(fun(_, {error, _}=Error) ->
                                  Error;
                             (active, Bin) ->
-                                 <<Bin/binary, ?UTP_ACTIVE:8>>;
+                                 <<Bin/binary, ?UTP_ACTIVE_OPT:8>>;
                             (mode, Bin) ->
-                                 <<Bin/binary, ?UTP_MODE:8>>;
+                                 <<Bin/binary, ?UTP_MODE_OPT:8>>;
                             (send_timeout, Bin) ->
-                                 <<Bin/binary, ?UTP_SEND_TMOUT:8>>;
+                                 <<Bin/binary, ?UTP_SEND_TMOUT_OPT:8>>;
                             (_, _) ->
                                  {error, einval}
                          end, <<>>, OptNames),
@@ -97,10 +94,6 @@ validate([{port,Port}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{port=Port});
 validate([{port,_}=Port|_], _) ->
     erlang:error(badarg, [Port]);
-validate([{fd,Fd}|Opts], UtpOpts) when is_integer(Fd), Fd >= 0 ->
-    validate(Opts, UtpOpts#utp_options{fd=Fd});
-validate([{fd,_}=Fd|_], _) ->
-    erlang:error(badarg, [Fd]);
 validate([inet|Opts], UtpOpts) ->
     case UtpOpts#utp_options.ip of
         undefined ->
@@ -135,11 +128,6 @@ validate([{active,Active}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{active=Active});
 validate([{active,_}=Active|_], _) ->
     erlang:error(badarg, [Active]);
-validate([{async_accept,AsyncAccept}|Opts], UtpOpts)
-  when is_boolean(AsyncAccept) ->
-    validate(Opts, UtpOpts#utp_options{async_accept=AsyncAccept});
-validate([{async_accept,_}=Async|_], _) ->
-    erlang:error(badarg, [Async]);
 validate([], UtpOpts) ->
     UtpOpts.
 
@@ -164,3 +152,42 @@ validate_ipaddr(IpAddr, UtpOpts) when is_list(IpAddr) ->
                     erlang:error(badarg, [IpAddr])
             end
     end.
+
+
+-ifdef(TEST).
+
+validate_test() ->
+    #utp_options{ip=IP1,family=Family1} = validate([{ip,"::"},inet6]),
+    ?assertMatch("::",IP1),
+    ?assertMatch(inet6,Family1),
+    #utp_options{ip=IP2,family=Family2} = validate([{ip,"127.0.0.1"},inet]),
+    ?assertMatch("127.0.0.1",IP2),
+    ?assertMatch(inet,Family2),
+    #utp_options{family=Family3} = validate([inet]),
+    ?assertMatch(inet,Family3),
+    #utp_options{family=Family4} = validate([inet6]),
+    ?assertMatch(inet6,Family4),
+
+    ?assertException(error, badarg, validate([{mode,bin}])),
+    ?assertException(error, badarg, validate([{port,65536}])),
+    ?assertException(error, badarg, validate([{ip,{127,0,0,1}},inet6])),
+    ?assertException(error, badarg, validate([{ip,"::"},inet])),
+    ?assertException(error, badarg, validate([{send_timeout,0}])),
+    ?assertException(error, badarg, validate([{active,never}])),
+    ?assertException(error, badarg, validate([{ip,{1,2,3,4,5}}])),
+    ?assertException(error, badarg, validate([{ip,"1.2.3.4.5"}])),
+    ok.
+
+validate_names_test() ->
+    ?assertMatch({ok,_}, validate_names([active,mode,send_timeout])),
+    ?assertMatch({error, einval}, validate_names([list])),
+    ?assertMatch({error, einval}, validate_names([binary])),
+    ?assertMatch({error, einval}, validate_names([binary,list])),
+    ?assertMatch({error, einval}, validate_names([inet])),
+    ?assertMatch({error, einval}, validate_names([inet6])),
+    ?assertMatch({error, einval}, validate_names([ip])),
+    ?assertMatch({error, einval}, validate_names([ifaddr])),
+    ?assertMatch({error, einval}, validate_names([port])),
+    ok.
+
+-endif.

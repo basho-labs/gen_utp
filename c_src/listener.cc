@@ -94,12 +94,11 @@ UtpDrv::Listener::input_ready()
     if (len <= 0) {
         return;
     }
-    {
-        MutexLocker qlock(queue_mutex);
-        // if we have nobody accepting connections, just drop the message
-        if (!sockopts.async_accept && acceptor_queue.size() == 0) {
-            return;
-        }
+    // if we have nobody accepting connections, just drop the message
+    MutexLocker qlock(queue_mutex);
+    size_t qsize = acceptor_queue.size();
+    if (qsize == 0) {
+        return;
     }
     int sock;
     if (open_udp_socket(sock, my_addr, true) < 0) {
@@ -124,21 +123,10 @@ UtpDrv::Listener::input_ready()
     }
     if (is_utp) {
         ErlDrvTermData new_port_owner = driver_connected(port);
-        bool sync_accept = false;
         Binary ref;
-        {
-            // even if async_accept is true, if there's a blocking accept call
-            // give it priority
-            MutexLocker qlock(queue_mutex);
-            size_t qsize = acceptor_queue.size();
-            if (qsize > 0) {
-                sync_accept = true;
-                Acceptor& acc = acceptor_queue.front();
-                new_port_owner = acc.caller;
-                ref.swap(acc.ref);
-                acceptor_queue.pop_front();
-            }
-        }
+        Acceptor& acc = acceptor_queue.front();
+        new_port_owner = acc.caller;
+        ref.swap(acc.ref);
         ErlDrvPort new_port = create_port(new_port_owner, server);
         server->set_port(new_port);
         MainHandler::start_input(sock, server);
@@ -147,7 +135,7 @@ UtpDrv::Listener::input_ready()
             ERL_DRV_PORT, driver_mk_port(new_port),
         };
         int index = 4;
-        if (sync_accept) {
+        if (ref) {
             term[index++] = ERL_DRV_EXT2TERM;
             term[index++] = ref;
             term[index++] = ref.size();
@@ -188,6 +176,7 @@ UtpDrv::Listener::input_ready()
             MutexLocker lock(drv_mutex);
             driver_output_term(port, term, index);
         }
+        acceptor_queue.pop_front();
     } else {
         ::close(sock);
         delete server;
@@ -232,16 +221,18 @@ UtpDrv::Listener::accept(const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACER << "Listener::accept " << this << UTPDRV_TRACE_ENDL;
     Acceptor acc;
-    try {
-        EiDecoder decoder(buf, len);
-        int type, size;
-        decoder.type(type, size);
-        if (type != ERL_BINARY_EXT) {
+    if (len != 0) {
+        try {
+            EiDecoder decoder(buf, len);
+            int type, size;
+            decoder.type(type, size);
+            if (type != ERL_BINARY_EXT) {
+                return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+            }
+            acc.ref.decode(decoder, size);
+        } catch (const EiError&) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        acc.ref.decode(decoder, size);
-    } catch (const EiError&) {
-        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
     acc.caller = driver_caller(port);
     {

@@ -30,7 +30,7 @@
 -endif.
 
 -export([start_link/0, start/0, stop/0,
-         listen/1, listen/2, accept/1, accept/2,
+         listen/1, listen/2, accept/1, accept/2, async_accept/1,
          connect/2, connect/3,
          close/1, send/2, recv/2, recv/3,
          sockname/1, peername/1, port/1,
@@ -95,8 +95,8 @@ listen(Port, Options) when Port >= 0, Port < 65536 ->
                 Result
         end
     catch
-        _:Reason ->
-            {error, Reason}
+        error:badarg ->
+            {error, einval}
     end.
 
 -spec accept(utpsock()) -> {ok, utpsock()} | {error, any()}.
@@ -105,17 +105,16 @@ accept(Sock) ->
 
 -spec accept(utpsock(), timeout()) -> {ok, utpsock()} | {error, any()}.
 accept(Sock, Timeout) ->
-    try
-        Ref = make_ref(),
-        Args = term_to_binary(term_to_binary(Ref)),
-        Result = erlang:port_control(Sock, ?UTP_ACCEPT, Args),
-        case binary_to_term(Result) of
-            ok ->
-                receive
-                    {utp_async, NewSock, Ref} ->
-                        {ok, NewSock}
-                after
-                    Timeout ->
+    Ref = make_ref(),
+    Args = term_to_binary(term_to_binary(Ref)),
+    case async_accept(Sock, Args) of
+        ok ->
+            receive
+                {utp_async, NewSock, Ref} ->
+                    {ok, NewSock}
+            after
+                Timeout ->
+                    try
                         erlang:port_control(Sock, ?UTP_CANCEL_ACCEPT, <<>>),
                         %% if the reply comes back while the cancel
                         %% call completes, return it
@@ -126,13 +125,27 @@ accept(Sock, Timeout) ->
                             0 ->
                                 {error, etimedout}
                         end
-                end;
-            Error ->
-                Error
-        end
+                    catch
+                        error:badarg ->
+                            {error, einval}
+                    end
+            end;
+        Error ->
+            Error
+    end.
+
+-spec async_accept(utpsock()) -> ok | {error, any()}.
+async_accept(Sock) ->
+    async_accept(Sock, <<>>).
+
+-spec async_accept(utpsock(), binary()) -> ok | {error, any()}.
+async_accept(Sock, Args) ->
+    try
+        Result = erlang:port_control(Sock, ?UTP_ACCEPT, Args),
+        binary_to_term(Result)
     catch
-        _:Reason ->
-            {error, Reason}
+        error:badarg ->
+            {error, einval}
     end.
 
 -spec connect(utpaddr(), utpport()) -> {ok, utpsock()} | {error, any()}.
@@ -165,9 +178,9 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
         {error, _}=Err ->
             Err;
         _ ->
+            ValidOpts = gen_utp_opts:validate(Opts),
+            OptBin = options_to_binary(ValidOpts),
             try
-                ValidOpts = gen_utp_opts:validate(Opts),
-                OptBin = options_to_binary(ValidOpts),
                 Ref = make_ref(),
                 RefBin = term_to_binary(Ref),
                 Args = term_to_binary({AddrStr, Port, OptBin, RefBin}),
@@ -179,8 +192,8 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
                         Result
                 end
             catch
-                _:Reason ->
-                    {error, Reason}
+                error:badarg ->
+                    {error, closed}
             end
     end.
 
@@ -241,30 +254,40 @@ recv(Sock, Length, Timeout) ->
                 Reply
         end
     catch
-        _:Reason ->
-            {error, Reason}
+        error:badarg ->
+            {error, closed}
     end.
 
 -spec sockname(utpsock()) -> {ok, {utpaddr(), utpport()}} | {error, any()}.
 sockname(Sock) ->
-    Result = erlang:port_control(Sock, ?UTP_SOCKNAME, <<>>),
-    case binary_to_term(Result) of
-        {ok, {AddrStr, Port}} ->
-            {ok, Addr} = inet_parse:address(AddrStr),
-            {ok, {Addr, Port}};
-        Error ->
-            Error
+    try
+        Result = erlang:port_control(Sock, ?UTP_SOCKNAME, <<>>),
+        case binary_to_term(Result) of
+            {ok, {AddrStr, Port}} ->
+                {ok, Addr} = inet_parse:address(AddrStr),
+                {ok, {Addr, Port}};
+            Error ->
+                Error
+        end
+    catch
+        error:badarg ->
+            {error,einval}
     end.
 
 -spec peername(utpsock()) -> {ok, {utpaddr(), utpport()}} | {error, any()}.
 peername(Sock) ->
-    Result = erlang:port_control(Sock, ?UTP_PEERNAME, <<>>),
-    case binary_to_term(Result) of
-        {ok, {AddrStr, Port}} ->
-            {ok, Addr} = inet_parse:address(AddrStr),
-            {ok, {Addr, Port}};
-        Error ->
-            Error
+    try
+        Result = erlang:port_control(Sock, ?UTP_PEERNAME, <<>>),
+        case binary_to_term(Result) of
+            {ok, {AddrStr, Port}} ->
+                {ok, Addr} = inet_parse:address(AddrStr),
+                {ok, {Addr, Port}};
+            Error ->
+                Error
+        end
+    catch
+        error:badarg ->
+            {error,einval}
     end.
 
 -spec port(utpsock()) -> {ok, utpport()} | {error, any()}.
@@ -282,15 +305,19 @@ setopts(Sock, Opts) when is_list(Opts) ->
     OptCheck = fun(Opt) -> Opt =/= undefined end,
     case lists:any(OptCheck, [ValidOpts#utp_options.ip,
                               ValidOpts#utp_options.port,
-                              ValidOpts#utp_options.fd,
                               ValidOpts#utp_options.family]) of
         true ->
             erlang:error(badarg, Opts);
         false ->
             OptBin = options_to_binary(ValidOpts),
             Args = term_to_binary(OptBin),
-            Result = erlang:port_control(Sock, ?UTP_SETOPTS, Args),
-            binary_to_term(Result)
+            try
+                Result = erlang:port_control(Sock, ?UTP_SETOPTS, Args),
+                binary_to_term(Result)
+            catch
+                error:badarg ->
+                    {error, closed}
+            end
     end.
 
 -spec getopts(utpsock(), gen_utp_opts:utpgetoptnames()) ->
@@ -299,8 +326,13 @@ getopts(Sock, OptNames) when is_list(OptNames) ->
     case gen_utp_opts:validate_names(OptNames) of
         {ok, OptNameBin} ->
             Args = term_to_binary(OptNameBin),
-            Result = erlang:port_control(Sock, ?UTP_GETOPTS, Args),
-            binary_to_term(Result);
+            try
+                Result = erlang:port_control(Sock, ?UTP_GETOPTS, Args),
+                binary_to_term(Result)
+            catch
+                error:badarg ->
+                    {error, closed}
+            end;
         Error ->
             Error
     end.
@@ -370,15 +402,6 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(any(), utpstate()) -> {noreply, utpstate()}.
-handle_info({close, DrvPort}, State) ->
-    try
-        io:format("**** closing port ~p~n", [DrvPort]),
-        erlang:port_close(DrvPort)
-    catch
-        _:_ ->
-            ok
-    end,
-    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -453,8 +476,8 @@ send(Sock, Data, Start) ->
                 Result
         end
     catch
-        _:Reason ->
-            {error, Reason}
+        error:badarg ->
+            {error, einval}
     end.
 
 -spec validate_connect(utpsock()) -> {ok, utpsock()} | {error, any()}.
@@ -485,9 +508,9 @@ options_to_binary(UtpOpts) ->
                         undefined ->
                             <<>>;
                         list ->
-                            <<?UTP_LIST:8>>;
+                            <<?UTP_LIST_OPT:8>>;
                         binary ->
-                            <<?UTP_BINARY:8>>
+                            <<?UTP_BINARY_OPT:8>>
                     end,
                     case UtpOpts#utp_options.family of
                         undefined ->
@@ -495,50 +518,36 @@ options_to_binary(UtpOpts) ->
                         inet ->
                             <<>>;
                         inet6 ->
-                            <<?UTP_INET6:8>>
+                            <<?UTP_INET6_OPT:8>>
                     end,
                     case UtpOpts#utp_options.ip of
                         undefined ->
                             <<>>;
                         AddrStr ->
-                            [?UTP_IP, AddrStr, 0]
+                            [?UTP_IP_OPT, AddrStr, 0]
                     end,
                     case UtpOpts#utp_options.port of
                         undefined ->
                             <<>>;
                         Port ->
-                            <<?UTP_PORT:8, Port:16/big>>
-                    end,
-                    case UtpOpts#utp_options.fd of
-                        undefined ->
-                            <<>>;
-                        Fd ->
-                            <<?UTP_FD:8, Fd:32/big>>
+                            <<?UTP_PORT_OPT:8, Port:16/big>>
                     end,
                     case UtpOpts#utp_options.send_tmout of
                         undefined ->
                             <<>>;
                         infinity ->
-                            <<?UTP_SEND_TMOUT_INFINITE:8>>;
+                            <<?UTP_SEND_TMOUT_INFINITE_OPT:8>>;
                         Tm ->
-                            <<?UTP_SEND_TMOUT:8, Tm:32/big>>
+                            <<?UTP_SEND_TMOUT_OPT:8, Tm:32/big>>
                     end,
                     case UtpOpts#utp_options.active of
                         undefined ->
                             <<>>;
                         false ->
-                            <<?UTP_ACTIVE:8, ?UTP_ACTIVE_FALSE:8>>;
+                            <<?UTP_ACTIVE_OPT:8, ?UTP_ACTIVE_FALSE:8>>;
                         once ->
-                            <<?UTP_ACTIVE:8, ?UTP_ACTIVE_ONCE:8>>;
+                            <<?UTP_ACTIVE_OPT:8, ?UTP_ACTIVE_ONCE:8>>;
                         true ->
-                            <<?UTP_ACTIVE:8, ?UTP_ACTIVE_TRUE:8>>
-                    end,
-                    case UtpOpts#utp_options.async_accept of
-                        undefined ->
-                            <<>>;
-                        false ->
-                            <<?UTP_ASYNC_ACCEPT:8, 0:8>>;
-                        true ->
-                            <<?UTP_ASYNC_ACCEPT:8, 1:8>>
+                            <<?UTP_ACTIVE_OPT:8, ?UTP_ACTIVE_TRUE:8>>
                     end
                    ]).

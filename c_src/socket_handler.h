@@ -65,18 +65,16 @@ public:
 
     // the following enums must match option values in gen_utp_opts.hrl
     enum Opts {
-        UTP_IP = 1,
-        UTP_FD,
-        UTP_PORT,
-        UTP_LIST,
-        UTP_BINARY,
-        UTP_MODE,
-        UTP_INET,
-        UTP_INET6,
-        UTP_SEND_TMOUT,
-        UTP_SEND_TMOUT_INFINITE,
-        UTP_ACTIVE,
-        UTP_ASYNC_ACCEPT
+        UTP_IP_OPT = 1,
+        UTP_PORT_OPT,
+        UTP_LIST_OPT,
+        UTP_BINARY_OPT,
+        UTP_MODE_OPT,
+        UTP_INET_OPT,
+        UTP_INET6_OPT,
+        UTP_SEND_TMOUT_OPT,
+        UTP_SEND_TMOUT_INFINITE_OPT,
+        UTP_ACTIVE_OPT
     };
     typedef std::vector<Opts> OptsList;
 
@@ -101,7 +99,6 @@ public:
         DeliveryMode delivery_mode;
         bool inet6;
         bool addr_set;
-        bool async_accept;
     };
 
     virtual void set_port(ErlDrvPort p);
