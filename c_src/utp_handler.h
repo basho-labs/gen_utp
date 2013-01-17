@@ -85,6 +85,8 @@ protected:
 
     void close_utp();
 
+    void reset_waiting_recv();
+
     virtual void do_send_to(const byte* p, size_t len, const sockaddr* to,
                             socklen_t slen);
     virtual void do_read(const byte* bytes, size_t count);

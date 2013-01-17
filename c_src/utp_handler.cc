@@ -343,10 +343,7 @@ UtpDrv::UtpHandler::cancel_recv()
 {
     UTPDRV_TRACER << "UtpHandler::cancel_recv " << this << UTPDRV_TRACE_ENDL;
     MutexLocker lock(utp_mutex);
-    receiver_waiting = false;
-    recv_len = 0;
-    caller_ref.reset();
-    caller = 0;
+    reset_waiting_recv();
     return 0;
 }
 
@@ -359,6 +356,15 @@ UtpDrv::UtpHandler::close_utp()
         UTP_Close(utp);
         utp = 0;
     }
+}
+
+void
+UtpDrv::UtpHandler::reset_waiting_recv()
+{
+    receiver_waiting = false;
+    recv_len = 0;
+    caller_ref.reset();
+    caller = 0;
 }
 
 void
@@ -396,10 +402,10 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
                 driver_enq(port, buf, count);
                 qsize = driver_sizeq(port);
             }
-            if (receiver_waiting &&  qsize >= recv_len) {
+            if (receiver_waiting && qsize >= recv_len) {
                 Receiver rcvr(false, caller, caller_ref);
                 qsize = send_read_buffer(recv_len, rcvr);
-                cancel_recv();
+                reset_waiting_recv();
             }
         } else {
             ustring data(reinterpret_cast<unsigned char*>(buf), count);

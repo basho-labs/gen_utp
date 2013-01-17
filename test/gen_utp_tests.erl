@@ -172,10 +172,14 @@ client_server_test_() ->
              {inorder,
               [{"uTP simple connect test",
                 fun simple_connect/0},
-               {"uTP simple send binary test",
-                fun() -> simple_send(binary) end},
+               {"uTP simple send binary test, active true",
+                fun() -> simple_send(binary, true) end},
+               {"uTP simple send binary test, active once",
+                fun() -> simple_send(binary, once) end},
+               {"uTP simple send binary test, active false",
+                fun() -> simple_send(binary, false) end},
                {"uTP simple send list test",
-                fun() -> simple_send(list) end},
+                fun() -> simple_send(list, true) end},
                {"uTP two clients test",
                 fun two_clients/0},
                {"uTP client large send",
@@ -197,7 +201,7 @@ simple_connect() ->
     ok.
 
 simple_connect_server(Client, Ref) ->
-    Opts = [{active,true}, {mode,binary}],
+    Opts = [{mode,binary}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     ok = gen_utp:async_accept(LSock),
@@ -217,7 +221,7 @@ simple_connect_server(Client, Ref) ->
 simple_connect_client(Ref) ->
     receive
         {ok, {_, LPort}} ->
-            Opts = [{active,true}, {mode,binary}],
+            Opts = [{mode,binary}],
             {ok, Sock} = gen_utp:connect({127,0,0,1}, LPort, Opts),
             ?assertMatch(true, erlang:is_port(Sock)),
             ?assertEqual({connected, self()}, erlang:port_info(Sock, connected)),
@@ -232,55 +236,71 @@ simple_connect_client(Ref) ->
     end,
     ok.
 
-simple_send(Mode) ->
+simple_send(Mode, ActiveMode) ->
     Self = self(),
     Ref = make_ref(),
-    spawn_link(fun() -> ok = simple_send_server(Self, Ref, Mode) end),
-    ok = simple_send_client(Ref, Mode),
+    spawn_link(fun() ->
+                       ok = simple_send_server(Self, Ref, Mode, ActiveMode)
+               end),
+    ok = simple_send_client(Ref, Mode, ActiveMode),
     ok.
 
-simple_send_server(Client, Ref, Mode) ->
-    Opts = [{active,true}, {mode,Mode}],
+simple_send_server(Client, Ref, Mode, ActiveMode) ->
+    Opts = [{active,ActiveMode}, {mode,Mode}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
     {ok, Sock} = gen_utp:accept(LSock, 2000),
-    receive
-        {utp, Sock, SentVal} ->
-            case Mode of
-                binary ->
-                    ?assertMatch(<<"simple send client">>, SentVal);
-                list ->
-                    ?assertMatch("simple send client", SentVal)
-            end,
-            ok = gen_utp:send(Sock, <<"simple send server">>);
-        Error ->
-            exit(Error)
-    after
-        5000 -> exit(failure)
+    SentVal = case ActiveMode of
+                  false ->
+                      {ok, RecvData} = gen_utp:recv(Sock, 0, 5000),
+                      RecvData;
+                  _ ->
+                      receive
+                          {utp, Sock, Val} ->
+                              Val;
+                          Error ->
+                              exit(Error)
+                      after
+                          5000 -> exit(failure)
+                      end
+              end,
+    case Mode of
+        binary ->
+            ?assertMatch(<<"simple send client">>, SentVal);
+        list ->
+            ?assertMatch("simple send client", SentVal)
     end,
+    ok = gen_utp:send(Sock, <<"simple send server">>),
     ok = gen_utp:close(LSock),
     Client ! {done, Ref},
     ok.
 
-simple_send_client(Ref, Mode) ->
+simple_send_client(Ref, Mode, ActiveMode) ->
     receive
         {ok, {_, LPort}} ->
-            Opts = [Mode,{active,true}],
+            Opts = [Mode,{active,ActiveMode}],
             {ok, Sock} = gen_utp:connect("127.0.0.1", LPort, Opts),
             ok = gen_utp:send(Sock, <<"simple send client">>),
-            receive
-                {utp, Sock, Reply} ->
-                    case Mode of
-                        binary ->
-                            ?assertMatch(<<"simple send server">>, Reply);
-                        list ->
-                            ?assertMatch("simple send server", Reply)
+            Reply = case ActiveMode of
+                        false ->
+                            {ok, RecvData} = gen_utp:recv(Sock, 0, 5000),
+                            RecvData;
+                        _ ->
+                            receive
+                                {utp, Sock, Val} ->
+                                    Val
+                            after
+                                5000 -> exit(failure)
+                            end
                     end,
-                    receive
-                        {done, Ref} -> ok
-                    after
-                        5000 -> exit(failure)
-                    end
+            case Mode of
+                binary ->
+                    ?assertMatch(<<"simple send server">>, Reply);
+                list ->
+                    ?assertMatch("simple send server", Reply)
+            end,
+            receive
+                {done, Ref} -> ok
             after
                 5000 -> exit(failure)
             end,

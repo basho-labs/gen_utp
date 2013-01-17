@@ -283,11 +283,13 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
     } else {
         ErlDrvTermData term[] = {
             ERL_DRV_EXT2TERM, receiver.caller_ref, receiver.caller_ref.size(),
+            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
             ERL_DRV_BUF2BINARY, data, total,
+            ERL_DRV_TUPLE, 2,
             ERL_DRV_TUPLE, 2,
         };
         if (sockopts.delivery_mode == DATA_LIST) {
-            term[3] = ERL_DRV_STRING;
+            term[5] = ERL_DRV_STRING;
         }
         driver_send_term(port, receiver.caller, term, sizeof term/sizeof *term);
     }
