@@ -111,6 +111,8 @@ UtpDrv::SocketHandler::control(unsigned command, const char* buf, ErlDrvSizeT le
         return setopts(buf, len, rbuf, rlen);
     case UTP_GETOPTS:
         return getopts(buf, len, rbuf, rlen);
+    case UTP_RECV:
+        return encode_error(rbuf, rlen, ENOTCONN);
     }
     return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_GENERAL);
 }

@@ -70,6 +70,8 @@ listen_test_() ->
              {inorder,
               [{"uTP simple listen test",
                 fun simple_listen/0},
+               {"uTP listen not connected test",
+                fun listen_notconn/0},
                {"uTP two listen test",
                 fun two_listen/0},
                {"uTP specific interface listen test",
@@ -97,6 +99,12 @@ simple_listen() ->
     ?assertMatch(ok, gen_utp:close(LSock)),
     ?assertMatch(undefined, erlang:port_info(LSock)),
     ?assertEqual(Ports, length(erlang:ports())),
+    ok.
+
+listen_notconn() ->
+    {ok, LSock} = gen_utp:listen(0),
+    ?assertMatch({error,enotconn}, gen_utp:send(LSock, "data")),
+    ?assertMatch({error,enotconn}, gen_utp:recv(LSock, 0, 1000)),
     ok.
 
 two_listen() ->
