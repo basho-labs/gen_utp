@@ -31,7 +31,7 @@
 
 -export([start_link/0, start/0, stop/0,
          listen/1, listen/2, accept/1, accept/2, async_accept/1,
-         connect/2, connect/3,
+         connect/2, connect/3, connect/4,
          close/1, send/2, recv/2, recv/3,
          sockname/1, peername/1, port/1,
          setopts/2, getopts/2,
@@ -196,6 +196,13 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
                     {error, closed}
             end
     end.
+
+-spec connect(utpaddr(), utpport(), gen_utp_opts:utpopts(), timeout()) ->
+                     {ok, utpsock()} | {error, any()}.
+connect(Addr, Port, Opts, _Timeout) when Port > 0, Port =< 65535 ->
+    %% uTP doesn't give us any control over connect timeouts,
+    %% so ignore the Timeout parameter for now
+    connect(Addr, Port, Opts).
 
 -spec close(utpsock()) -> ok.
 close(Sock) ->
