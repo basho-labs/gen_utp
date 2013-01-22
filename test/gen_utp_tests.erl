@@ -591,7 +591,7 @@ invalid_accept() ->
     ok = gen_utp:close(LSock).
 
 packet_size() ->
-    {ok, LSock} = gen_utp:listen(0, [binary]),
+    {ok, LSock} = gen_utp:listen(0, [binary,{active,false}]),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     Data = <<"1234567890">>,
     lists:foreach(fun(Pkt) ->
@@ -617,7 +617,7 @@ packet_size() ->
     ok.
 
 header_size() ->
-    {ok, LSock} = gen_utp:listen(0, [binary, {header,5}]),
+    {ok, LSock} = gen_utp:listen(0, [binary, {header,5}, {active,false}]),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     Data = [ $B,$a,$s,$h,$o | <<"1234567890">> ],
     ok = gen_utp:async_accept(LSock),

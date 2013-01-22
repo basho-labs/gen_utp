@@ -360,7 +360,7 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
-    send_tmout(-1), active(ACTIVE_FALSE), fd(-1), header(0), port(0),
+    send_tmout(-1), active(ACTIVE_TRUE), fd(-1), header(0), port(0),
     delivery_mode(DATA_LIST), packet(0), inet6(false), addr_set(false)
 {
 }
