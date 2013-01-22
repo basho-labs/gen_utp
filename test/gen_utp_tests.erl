@@ -42,7 +42,7 @@ port_number_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_) ->
-             {"uTP port number range test",
+             {"port number range test",
               fun port_number_range/0}
      end}.
 
@@ -68,17 +68,17 @@ listen_test_() ->
      fun cleanup/1,
      fun(_) ->
              {inorder,
-              [{"uTP simple listen test",
+              [{"simple listen test",
                 fun simple_listen/0},
-               {"uTP listen not connected test",
+               {"listen not connected test",
                 fun listen_notconn/0},
-               {"uTP two listen test",
+               {"two listen test",
                 fun two_listen/0},
-               {"uTP specific interface listen test",
+               {"specific interface listen test",
                 fun specific_interface/0},
-               {"uTP async accept test",
+               {"async accept test",
                 fun async_accept/0},
-               {"uTP accept timeout test",
+               {"accept timeout test",
                 fun accept_timeout/0}
               ]}
      end}.
@@ -152,7 +152,7 @@ client_timeout_test_() ->
      fun cleanup/1,
      fun(_) ->
              {timeout, 15,
-              [{"uTP client timeout test",
+              [{"client timeout test",
                 ?_test(
                    begin
                        {ok, LSock} = gen_utp:listen(0),
@@ -170,27 +170,27 @@ client_server_test_() ->
      fun cleanup/1,
      fun(_) ->
              {inorder,
-              [{"uTP simple connect test",
+              [{"simple connect test",
                 fun simple_connect/0},
-               {"uTP simple send binary test, active true",
+               {"simple send binary test, active true",
                 fun() -> simple_send(binary, true) end},
-               {"uTP simple send binary test, active once",
+               {"simple send binary test, active once",
                 fun() -> simple_send(binary, once) end},
-               {"uTP simple send binary test, active false",
+               {"simple send binary test, active false",
                 fun() -> simple_send(binary, false) end},
-               {"uTP simple send list test",
+               {"simple send list test",
                 fun() -> simple_send(list, true) end},
-               {"uTP two clients test",
+               {"two clients test",
                 fun two_clients/0},
-               {"uTP client large send",
+               {"client large send",
                 fun large_send/0},
-               {"uTP two servers test",
+               {"two servers test",
                 fun two_servers/0},
-               {"uTP send timeout test",
+               {"send timeout test",
                 fun send_timeout/0},
-               {"uTP invalid accept test",
+               {"invalid accept test",
                 fun invalid_accept/0},
-               {"uTP packet size test",
+               {"packet size test",
                 fun packet_size/0}
               ]}
      end}.
