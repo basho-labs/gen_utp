@@ -2,7 +2,7 @@
 //
 // write_queue.cc: queue for uTP write data
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -55,8 +55,9 @@ UtpDrv::WriteQueue::push_back(ErlDrvBinary* bin)
 }
 
 void
-UtpDrv::WriteQueue::pop_bytes(void* to, size_t count)
+UtpDrv::WriteQueue::pop_bytes(void* buf, size_t count)
 {
+    char* to = reinterpret_cast<char*>(buf);
     while (count > 0) {
         ErlDrvBinary* bin = queue.front();
         ErlDrvSizeT bsize = bin->orig_size;
@@ -73,6 +74,7 @@ UtpDrv::WriteQueue::pop_bytes(void* to, size_t count)
             offset = 0;
             count -= to_copy;
             sz -= to_copy;
+            to += to_copy;
         }
     }
 }

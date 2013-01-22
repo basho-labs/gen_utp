@@ -157,7 +157,8 @@ UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
     sockopts = opts;
     if (sockopts.active != saved_active && sockopts.active != ACTIVE_FALSE) {
         Receiver rcvr;
-        send_read_buffer(0, rcvr);
+        ErlDrvSizeT qsize;
+        send_read_buffer(0, rcvr, qsize);
     }
 
     EiEncoder encoder;
@@ -220,6 +221,10 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
                     encoder.longval(sockopts.send_tmout);
                 }
                 break;
+            case UTP_PACKET_OPT:
+                encoder.tuple_header(2).atom("packet");
+                encoder.ulongval(sockopts.packet);
+                break;
             default:
             {
                 EiEncoder error;
@@ -236,16 +241,43 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
     return encoder.copy_to_binary(binptr, rlen);
 }
 
-ErlDrvSizeT
+bool
 UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
+                                        ErlDrvSizeT& new_qsize,
                                         const ustring* extra)
 {
-    ErlDrvSizeT total = 0, retval;
+    ErlDrvSizeT total = 0;
     ustring buf;
     {
         int vlen;
         PdlLocker pdl_lock(pdl);
+        new_qsize = driver_sizeq(port);
+        if (new_qsize == 0 || new_qsize < len || new_qsize < sockopts.packet) {
+            return false;
+        }
         SysIOVec* vec = driver_peekq(port, &vlen);
+        uint32_t pkt_size = 0;
+        switch (sockopts.packet) {
+        case 0:
+            // nothing to do
+            break;
+        case 1:
+            pkt_size = *reinterpret_cast<unsigned char*>(vec[0].iov_base);
+            break;
+        case 2:
+            pkt_size = ntohs(*reinterpret_cast<uint16_t*>(vec[0].iov_base));
+            break;
+        case 4:
+            pkt_size = ntohl(*reinterpret_cast<uint32_t*>(vec[0].iov_base));
+            break;
+        }
+        if (pkt_size != 0) {
+            if (new_qsize < (sockopts.packet + pkt_size)) {
+                return false;
+            }
+            driver_deq(port, sockopts.packet);
+            vec = driver_peekq(port, &vlen);
+        }
         if (len == 0) {
             for (int i = 0; i < vlen; ++i) {
                 total += vec[i].iov_len;
@@ -259,13 +291,14 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
         }
         buf.reserve(total);
         for (int i = 0; i < vlen; ++i) {
-            buf.append(reinterpret_cast<unsigned char*>(vec[i].iov_base), vec[i].iov_len);
+            buf.append(reinterpret_cast<unsigned char*>(vec[i].iov_base),
+                       vec[i].iov_len);
         }
         if (extra != 0) {
             buf.append(*extra);
         }
         driver_deq(port, deq_size);
-        retval = driver_sizeq(port);
+        new_qsize = driver_sizeq(port);
     }
     ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(buf.data());
     if (receiver.send_to_connected) {
@@ -296,12 +329,12 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
     if (sockopts.active == ACTIVE_ONCE) {
         sockopts.active = ACTIVE_FALSE;
     }
-    return retval;
+    return true;
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
     send_tmout(-1), active(ACTIVE_FALSE), fd(-1), port(0),
-    delivery_mode(DATA_LIST), inet6(false), addr_set(false)
+    delivery_mode(DATA_LIST), packet(0), inet6(false), addr_set(false)
 {
 }
 
@@ -370,6 +403,12 @@ UtpDrv::SocketHandler::SockOpts::decode(const Binary& bin, OptsList* opts_list)
                 opts_list->push_back(UTP_ACTIVE_OPT);
             }
             break;
+        case UTP_PACKET_OPT:
+            packet = static_cast<unsigned char>(*data++);
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_PACKET_OPT);
+            }
+            break;
         }
     }
     if (addr_set) {
@@ -409,6 +448,9 @@ UtpDrv::SocketHandler::SockOpts::decode_and_merge(const Binary& bin)
             break;
         case UTP_ACTIVE_OPT:
             active = so.active;
+            break;
+        case UTP_PACKET_OPT:
+            packet = so.packet;
             break;
         }
     }

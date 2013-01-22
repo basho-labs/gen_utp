@@ -132,6 +132,27 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
     if (writable) {
         if (ev.size > 0) {
             MutexLocker lock(write_q_mutex);
+            if (sockopts.packet > 0) {
+                ErlDrvBinary* pbin = driver_alloc_binary(sockopts.packet);
+                union {
+                    char* p1;
+                    uint16_t* p2;
+                    uint32_t* p4;
+                };
+                p1 = pbin->orig_bytes;
+                switch (sockopts.packet) {
+                case 1:
+                    *p1 = ev.size & 0xFF;
+                    break;
+                case 2:
+                    *p2 = htons(ev.size & 0xFFFF);
+                    break;
+                case 4:
+                    *p4 = htonl(ev.size & 0xFFFFFFFF);
+                    break;
+                }
+                write_queue.push_back(pbin);
+            }
             for (int i = 0; i < ev.vsize; ++i) {
                 ErlDrvBinary* bin = 0;
                 if (ev.binv[i] != 0) {
@@ -278,52 +299,22 @@ UtpDrv::UtpHandler::recv(const char* buf, ErlDrvSizeT len,
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
 
-    EiEncoder encoder;
-    PdlLocker pdl_lock(pdl);
-    ErlDrvSizeT qsize = driver_sizeq(port);
-    bool need_wait = false;
-    if (qsize > 0) {
-        if (length == 0) {
-            length = qsize;
-        }
-        if (qsize >= length) {
-            encoder.tuple_header(2).atom("ok");
-            int vlen;
-            SysIOVec* vec = driver_peekq(port, &vlen);
-            size_t total = 0;
-            ustring buf;
-            buf.reserve(length+1);
-            for (int i = 0; i < vlen; ++i) {
-                char* p = vec[i].iov_base;
-                unsigned char* uc = reinterpret_cast<unsigned char*>(p);
-                if (total + vec[i].iov_len <= length) {
-                    buf.append(uc, vec[i].iov_len);
-                    total += vec[i].iov_len;
-                } else {
-                    buf.append(uc, length - total);
-                    break;
-                }
-            }
-            driver_deq(port, length);
-            if (sockopts.delivery_mode == DATA_LIST) {
-                encoder.string(reinterpret_cast<const char*>(buf.c_str()));
-            } else {
-                encoder.binary(buf.data(), total);
-            }
-        } else {
-            need_wait = true;
-        }
-    } else {
-        need_wait = true;
-    }
-    if (need_wait) {
-        encoder.atom("wait");
+    ErlDrvTermData local_caller = driver_caller(port);
+    Receiver rcvr(false, local_caller, ref);
+    ErlDrvSizeT qsize = 1; // any non-zero value will do
+    bool sent = send_read_buffer(length, rcvr, qsize);
+    if (sent && qsize == 0) {
+        MutexLocker lock(utp_mutex);
+        UTP_RBDrained(utp);
+    } if (!sent) {
         MutexLocker lock(utp_mutex);
         caller_ref.swap(ref);
-        caller = driver_caller(port);
+        caller = local_caller;
         recv_len = length;
         receiver_waiting = true;
     }
+    EiEncoder encoder;
+    encoder.atom("wait");
     ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
     return encoder.copy_to_binary(binptr, rlen);
 }
@@ -394,23 +385,22 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
 {
     UTPDRV_TRACER << "UtpHandler::do_read " << this << UTPDRV_TRACE_ENDL;
     if (count != 0) {
-        ErlDrvSizeT qsize;
+        ErlDrvSizeT qsize = 1; // any non-zero value will do
         char* buf = const_cast<char*>(reinterpret_cast<const char*>(bytes));
+        {
+            PdlLocker pdl_lock(pdl);
+            driver_enq(port, buf, count);
+        }
         if (sockopts.active == ACTIVE_FALSE) {
-            {
-                PdlLocker pdl_lock(pdl);
-                driver_enq(port, buf, count);
-                qsize = driver_sizeq(port);
-            }
-            if (receiver_waiting && qsize >= recv_len) {
+            if (receiver_waiting) {
                 Receiver rcvr(false, caller, caller_ref);
-                qsize = send_read_buffer(recv_len, rcvr);
-                reset_waiting_recv();
+                if (send_read_buffer(recv_len, rcvr, qsize)) {
+                    reset_waiting_recv();
+                }
             }
         } else {
-            ustring data(reinterpret_cast<unsigned char*>(buf), count);
             Receiver rcvr;
-            qsize = send_read_buffer(0, rcvr, &data);
+            send_read_buffer(0, rcvr, qsize);
         }
         if (qsize == 0) {
             UTP_RBDrained(utp);

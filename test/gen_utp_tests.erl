@@ -189,7 +189,9 @@ client_server_test_() ->
                {"uTP send timeout test",
                 fun send_timeout/0},
                {"uTP invalid accept test",
-                fun invalid_accept/0}
+                fun invalid_accept/0},
+               {"uTP packet size test",
+                fun packet_size/0}
               ]}
      end}.
 
@@ -586,4 +588,28 @@ invalid_accept() ->
     end,
     ok = gen_utp:close(LSock).
 
-
+packet_size() ->
+    {ok, LSock} = gen_utp:listen(0, [binary]),
+    {ok, {_, Port}} = gen_utp:sockname(LSock),
+    Data = <<"1234567890">>,
+    lists:foreach(fun(Pkt) ->
+                          spawn(fun() ->
+                                        {ok,S} = gen_utp:connect("localhost",
+                                                                 Port,
+                                                                 [{packet,Pkt}]),
+                                        ok = gen_utp:send(S, Data),
+                                        gen_utp:close(S)
+                                end),
+                          ok = gen_utp:async_accept(LSock),
+                          receive
+                              {utp_async, S, _} ->
+                                  ok = gen_utp:setopts(S, [{packet,Pkt}]),
+                                  ?assertMatch({ok,Data}, gen_utp:recv(S, 0, 2000)),
+                                  ok = gen_utp:close(S)
+                          after
+                              2000 ->
+                                  exit(failure)
+                          end
+                  end, [raw, 0, 1, 2, 4]),
+    ok = gen_utp:close(LSock),
+    ok.

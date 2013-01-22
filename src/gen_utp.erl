@@ -549,5 +549,11 @@ options_to_binary(UtpOpts) ->
                             <<?UTP_ACTIVE_OPT:8, ?UTP_ACTIVE_ONCE:8>>;
                         true ->
                             <<?UTP_ACTIVE_OPT:8, ?UTP_ACTIVE_TRUE:8>>
+                    end,
+                    case UtpOpts#utp_options.packet of
+                        undefined ->
+                            <<>>;
+                        Val ->
+                            <<?UTP_PACKET_OPT:8, Val:8>>
                     end
                    ]).

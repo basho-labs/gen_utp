@@ -31,6 +31,7 @@
 -define(UTP_SEND_TMOUT_OPT, 8).
 -define(UTP_SEND_TMOUT_INFINITE_OPT, 9).
 -define(UTP_ACTIVE_OPT, 10).
+-define(UTP_PACKET_OPT, 11).
 
 %% IDs for values of the active option
 -define(UTP_ACTIVE_FALSE, 0).
@@ -38,10 +39,11 @@
 -define(UTP_ACTIVE_TRUE, 2).
 
 -record(utp_options, {
-          mode :: list | binary,
+          mode :: gen_utp_opts:utpmode(),
           ip :: string(),
           port :: gen_utp:utpport(),
-          family :: inet | inet6,
-          send_tmout :: pos_integer() | infinity,
-          active :: once | boolean()
+          family :: gen_utp_opts:utpfamily(),
+          send_tmout :: gen_utp_opts:utptimeout(),
+          active :: gen_utp_opts:utpactive(),
+          packet :: gen_utp_opts:utppacket()
          }).

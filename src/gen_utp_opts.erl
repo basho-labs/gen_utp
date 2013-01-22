@@ -39,8 +39,10 @@
 -type utpsendopt() :: {send_timeout,utptimeout()}.
 -type utpactive() :: once | boolean().
 -type utpactiveopt() :: {active, utpactive()}.
+-type utppacket() :: raw | {packet,0} | {packet,1} | {packet,2} | {packet,4}.
 -type utpopt() :: utpipopt() | utpportopt() | utpmodeopt() |
-                  utpfamily() | utpsendopt() | utpactiveopt().
+                  utpfamily() | utpsendopt() | utpactiveopt() |
+                  utppacket().
 -type utpopts() :: [utpopt()].
 -type utpgetoptname() :: active | mode | send_timeout.
 -type utpgetoptnames() :: [utpgetoptname()].
@@ -60,6 +62,8 @@ validate_names(OptNames) when is_list(OptNames) ->
                                  <<Bin/binary, ?UTP_MODE_OPT:8>>;
                             (send_timeout, Bin) ->
                                  <<Bin/binary, ?UTP_SEND_TMOUT_OPT:8>>;
+                            (packet, Bin) ->
+                                 <<Bin/binary, ?UTP_PACKET_OPT:8>>;
                             (_, _) ->
                                  {error, einval}
                          end, <<>>, OptNames),
@@ -128,6 +132,13 @@ validate([{active,Active}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{active=Active});
 validate([{active,_}=Active|_], _) ->
     erlang:error(badarg, [Active]);
+validate([{packet,raw}|Opts], UtpOpts) ->
+    validate([{packet,0}|Opts], UtpOpts);
+validate([{packet,P}|Opts], UtpOpts)
+  when P == 0; P == 1; P == 2; P == 4 ->
+    validate(Opts, UtpOpts#utp_options{packet=P});
+validate([{packet,_}=Packet|_], _) ->
+    erlang:error(badarg, [Packet]);
 validate([], UtpOpts) ->
     UtpOpts.
 
@@ -167,6 +178,11 @@ validate_test() ->
     ?assertMatch(inet,Family3),
     #utp_options{family=Family4} = validate([inet6]),
     ?assertMatch(inet6,Family4),
+    ?assertMatch(#utp_options{packet=0}, validate([{packet,raw}])),
+    ?assertMatch(#utp_options{packet=0}, validate([{packet,0}])),
+    ?assertMatch(#utp_options{packet=1}, validate([{packet,1}])),
+    ?assertMatch(#utp_options{packet=2}, validate([{packet,2}])),
+    ?assertMatch(#utp_options{packet=4}, validate([{packet,4}])),
 
     ?assertException(error, badarg, validate([{mode,bin}])),
     ?assertException(error, badarg, validate([{port,65536}])),
@@ -176,10 +192,11 @@ validate_test() ->
     ?assertException(error, badarg, validate([{active,never}])),
     ?assertException(error, badarg, validate([{ip,{1,2,3,4,5}}])),
     ?assertException(error, badarg, validate([{ip,"1.2.3.4.5"}])),
+    ?assertException(error, badarg, validate([{packet,3}])),
     ok.
 
 validate_names_test() ->
-    ?assertMatch({ok,_}, validate_names([active,mode,send_timeout])),
+    ?assertMatch({ok,_}, validate_names([active,mode,send_timeout,packet])),
     ?assertMatch({error, einval}, validate_names([list])),
     ?assertMatch({error, einval}, validate_names([binary])),
     ?assertMatch({error, einval}, validate_names([binary,list])),

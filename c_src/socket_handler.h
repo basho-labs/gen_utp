@@ -74,7 +74,8 @@ public:
         UTP_INET6_OPT,
         UTP_SEND_TMOUT_OPT,
         UTP_SEND_TMOUT_INFINITE_OPT,
-        UTP_ACTIVE_OPT
+        UTP_ACTIVE_OPT,
+        UTP_PACKET_OPT
     };
     typedef std::vector<Opts> OptsList;
 
@@ -97,6 +98,7 @@ public:
         int fd;
         unsigned short port;
         DeliveryMode delivery_mode;
+        unsigned char packet;
         bool inet6;
         bool addr_set;
     };
@@ -148,8 +150,9 @@ protected:
         bool send_to_connected;
     };
 
-    ErlDrvSizeT
+    bool
     send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
+                     ErlDrvSizeT& new_queue_size,
                      const ustring* extra_data = 0);
 
     SockOpts sockopts;
