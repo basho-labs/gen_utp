@@ -555,5 +555,11 @@ options_to_binary(UtpOpts) ->
                             <<>>;
                         Val ->
                             <<?UTP_PACKET_OPT:8, Val:8>>
+                    end,
+                    case UtpOpts#utp_options.header of
+                        undefined ->
+                            <<>>;
+                        HdrSize ->
+                            <<?UTP_HEADER_OPT:8, HdrSize:16/big>>
                     end
                    ]).

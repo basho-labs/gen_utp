@@ -75,7 +75,8 @@ public:
         UTP_SEND_TMOUT_OPT,
         UTP_SEND_TMOUT_INFINITE_OPT,
         UTP_ACTIVE_OPT,
-        UTP_PACKET_OPT
+        UTP_PACKET_OPT,
+        UTP_HEADER_OPT
     };
     typedef std::vector<Opts> OptsList;
 
@@ -96,6 +97,7 @@ public:
         long send_tmout;
         Active active;
         int fd;
+        int header;
         unsigned short port;
         DeliveryMode delivery_mode;
         unsigned char packet;

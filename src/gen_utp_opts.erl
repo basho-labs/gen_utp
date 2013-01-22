@@ -39,10 +39,13 @@
 -type utpsendopt() :: {send_timeout,utptimeout()}.
 -type utpactive() :: once | boolean().
 -type utpactiveopt() :: {active, utpactive()}.
--type utppacket() :: raw | {packet,0} | {packet,1} | {packet,2} | {packet,4}.
+-type utppacketsize() :: raw | 0 | 1 | 2 | 4.
+-type utppacketopt() :: {packet, utppacketsize()}.
+-type utpheadersize() :: pos_integer().
+-type utpheaderopt() :: {header, utpheadersize()}.
 -type utpopt() :: utpipopt() | utpportopt() | utpmodeopt() |
                   utpfamily() | utpsendopt() | utpactiveopt() |
-                  utppacket().
+                  utppacketopt() | utpheaderopt().
 -type utpopts() :: [utpopt()].
 -type utpgetoptname() :: active | mode | send_timeout.
 -type utpgetoptnames() :: [utpgetoptname()].
@@ -64,6 +67,8 @@ validate_names(OptNames) when is_list(OptNames) ->
                                  <<Bin/binary, ?UTP_SEND_TMOUT_OPT:8>>;
                             (packet, Bin) ->
                                  <<Bin/binary, ?UTP_PACKET_OPT:8>>;
+                            (header, Bin) ->
+                                 <<Bin/binary, ?UTP_HEADER_OPT:8>>;
                             (_, _) ->
                                  {error, einval}
                          end, <<>>, OptNames),
@@ -139,8 +144,24 @@ validate([{packet,P}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{packet=P});
 validate([{packet,_}=Packet|_], _) ->
     erlang:error(badarg, [Packet]);
+validate([{header,Sz}|Opts], UtpOpts)
+  when is_integer(Sz), Sz > 0, Sz < 65536 ->
+    validate(Opts, UtpOpts#utp_options{header=Sz});
+validate([{header,_}=Hdr|_], _) ->
+    erlang:error(badarg, [Hdr]);
 validate([], UtpOpts) ->
-    UtpOpts.
+    case UtpOpts#utp_options.header of
+        undefined ->
+            UtpOpts;
+        Size ->
+            %% {header,Size} valid only in binary mode
+            case UtpOpts#utp_options.mode of
+                binary ->
+                    UtpOpts;
+                _ ->
+                    erlang:error(badarg, [{mode,list},{header,Size}])
+            end
+    end.
 
 validate_ipaddr(IpAddr, UtpOpts) when is_tuple(IpAddr) ->
     try inet_parse:ntoa(IpAddr) of
@@ -183,6 +204,7 @@ validate_test() ->
     ?assertMatch(#utp_options{packet=1}, validate([{packet,1}])),
     ?assertMatch(#utp_options{packet=2}, validate([{packet,2}])),
     ?assertMatch(#utp_options{packet=4}, validate([{packet,4}])),
+    ?assertMatch(#utp_options{header=1}, validate([binary,{header,1}])),
 
     ?assertException(error, badarg, validate([{mode,bin}])),
     ?assertException(error, badarg, validate([{port,65536}])),
@@ -193,10 +215,12 @@ validate_test() ->
     ?assertException(error, badarg, validate([{ip,{1,2,3,4,5}}])),
     ?assertException(error, badarg, validate([{ip,"1.2.3.4.5"}])),
     ?assertException(error, badarg, validate([{packet,3}])),
+    ?assertException(error, badarg, validate([{header,1}])),
     ok.
 
 validate_names_test() ->
-    ?assertMatch({ok,_}, validate_names([active,mode,send_timeout,packet])),
+    OkOpts = [active,mode,send_timeout,packet,header],
+    ?assertMatch({ok,_}, validate_names(OkOpts)),
     ?assertMatch({error, einval}, validate_names([list])),
     ?assertMatch({error, einval}, validate_names([binary])),
     ?assertMatch({error, einval}, validate_names([binary,list])),

@@ -300,31 +300,58 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
         driver_deq(port, deq_size);
         new_qsize = driver_sizeq(port);
     }
-    ErlDrvTermData data = reinterpret_cast<ErlDrvTermData>(buf.data());
     if (receiver.send_to_connected) {
-        ErlDrvTermData term[] = {
-            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp")),
-            ERL_DRV_PORT, driver_mk_port(port),
-            ERL_DRV_BUF2BINARY, data, total,
-            ERL_DRV_TUPLE, 3,
-        };
-        if (sockopts.delivery_mode == DATA_LIST) {
-            term[4] = ERL_DRV_STRING;
+        int index = 0;
+        ErlDrvTermData term[2*sockopts.header+11];
+        term[index++] = ERL_DRV_ATOM;
+        term[index++] = driver_mk_atom(const_cast<char*>("utp"));
+        term[index++] = ERL_DRV_PORT;
+        term[index++] = driver_mk_port(port);
+        const unsigned char* p = buf.data();
+        for (int i = 0; i < sockopts.header; ++i, index += 2) {
+            term[index] = ERL_DRV_UINT;
+            term[index+1] = *p++;
         }
+        if (sockopts.delivery_mode == DATA_LIST) {
+            term[index++] = ERL_DRV_STRING;
+        } else {
+            term[index++] = ERL_DRV_BUF2BINARY;
+        }
+        term[index++] = reinterpret_cast<ErlDrvTermData>(p);
+        term[index++] = total - sockopts.header;
+        if (sockopts.header != 0) {
+            term[index++] = ERL_DRV_LIST;
+            term[index++] = sockopts.header + 1;
+        }
+        term[index++] = ERL_DRV_TUPLE;
+        term[index++] = 3;
         MutexLocker lock(drv_mutex);
-        driver_output_term(port, term, sizeof term/sizeof *term);
+        driver_output_term(port, term, index);
     } else {
-        ErlDrvTermData term[] = {
-            ERL_DRV_EXT2TERM, receiver.caller_ref, receiver.caller_ref.size(),
-            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
-            ERL_DRV_BUF2BINARY, data, total,
-            ERL_DRV_TUPLE, 2,
-            ERL_DRV_TUPLE, 2,
-        };
-        if (sockopts.delivery_mode == DATA_LIST) {
-            term[5] = ERL_DRV_STRING;
+        int index = 0;
+        ErlDrvTermData term[2*sockopts.header+14];
+        term[index++] = ERL_DRV_EXT2TERM;
+        term[index++] = receiver.caller_ref;
+        term[index++] = receiver.caller_ref.size();
+        term[index++] = ERL_DRV_ATOM;
+        term[index++] = driver_mk_atom(const_cast<char*>("ok"));
+        const unsigned char* p = buf.data();
+        for (int i = 0; i < sockopts.header; ++i, index += 2) {
+            term[index] = ERL_DRV_UINT;
+            term[index+1] = *p++;
         }
-        driver_send_term(port, receiver.caller, term, sizeof term/sizeof *term);
+        term[index++] = ERL_DRV_BUF2BINARY;
+        term[index++] = reinterpret_cast<ErlDrvTermData>(p);
+        term[index++] = total - sockopts.header;
+        if (sockopts.header != 0) {
+            term[index++] = ERL_DRV_LIST;
+            term[index++] = sockopts.header + 1;
+        }
+        term[index++] = ERL_DRV_TUPLE;
+        term[index++] = 2;
+        term[index++] = ERL_DRV_TUPLE;
+        term[index++] = 2;
+        driver_send_term(port, receiver.caller, term, index);
     }
     if (sockopts.active == ACTIVE_ONCE) {
         sockopts.active = ACTIVE_FALSE;
@@ -333,7 +360,7 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receive
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
-    send_tmout(-1), active(ACTIVE_FALSE), fd(-1), port(0),
+    send_tmout(-1), active(ACTIVE_FALSE), fd(-1), header(0), port(0),
     delivery_mode(DATA_LIST), packet(0), inet6(false), addr_set(false)
 {
 }
@@ -409,6 +436,13 @@ UtpDrv::SocketHandler::SockOpts::decode(const Binary& bin, OptsList* opts_list)
                 opts_list->push_back(UTP_PACKET_OPT);
             }
             break;
+        case UTP_HEADER_OPT:
+            header = ntohs(*reinterpret_cast<const uint16_t*>(data));
+            data += 2;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_HEADER_OPT);
+            }
+            break;
         }
     }
     if (addr_set) {
@@ -451,6 +485,9 @@ UtpDrv::SocketHandler::SockOpts::decode_and_merge(const Binary& bin)
             break;
         case UTP_PACKET_OPT:
             packet = so.packet;
+            break;
+        case UTP_HEADER_OPT:
+            header = so.header;
             break;
         }
     }

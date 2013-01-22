@@ -32,6 +32,7 @@
 -define(UTP_SEND_TMOUT_INFINITE_OPT, 9).
 -define(UTP_ACTIVE_OPT, 10).
 -define(UTP_PACKET_OPT, 11).
+-define(UTP_HEADER_OPT, 12).
 
 %% IDs for values of the active option
 -define(UTP_ACTIVE_FALSE, 0).
@@ -45,5 +46,6 @@
           family :: gen_utp_opts:utpfamily(),
           send_tmout :: gen_utp_opts:utptimeout(),
           active :: gen_utp_opts:utpactive(),
-          packet :: gen_utp_opts:utppacket()
+          packet :: gen_utp_opts:utppacketsize(),
+          header :: gen_utp_opts:utpheadersize()
          }).

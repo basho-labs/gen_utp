@@ -191,7 +191,9 @@ client_server_test_() ->
                {"invalid accept test",
                 fun invalid_accept/0},
                {"packet size test",
-                fun packet_size/0}
+                fun packet_size/0},
+               {"header size test",
+                fun header_size/0}
               ]}
      end}.
 
@@ -611,5 +613,26 @@ packet_size() ->
                                   exit(failure)
                           end
                   end, [raw, 0, 1, 2, 4]),
+    ok = gen_utp:close(LSock),
+    ok.
+
+header_size() ->
+    {ok, LSock} = gen_utp:listen(0, [binary, {header,5}]),
+    {ok, {_, Port}} = gen_utp:sockname(LSock),
+    Data = [ $B,$a,$s,$h,$o | <<"1234567890">> ],
+    ok = gen_utp:async_accept(LSock),
+    spawn(fun() ->
+                  {ok,S} = gen_utp:connect("localhost", Port, [binary, {header,5}]),
+                  ok = gen_utp:send(S, Data),
+                  gen_utp:close(S)
+          end),
+    receive
+        {utp_async, S, _} ->
+            ?assertMatch({ok,Data}, gen_utp:recv(S, 0, 2000)),
+            ok = gen_utp:close(S)
+    after
+        2000 ->
+            exit(failure)
+    end,
     ok = gen_utp:close(LSock),
     ok.
