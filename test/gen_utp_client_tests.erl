@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% gen_utp_tests: tests for gen_utp and the utpdrv driver
+%% gen_utp_client_tests: client tests for gen_utp
 %%
 %% Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 %%
@@ -19,120 +19,11 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(gen_utp_tests).
+-module(gen_utp_client_tests).
 -author('Steve Vinoski <vinoski@ieee.org>').
 
 -include_lib("eunit/include/eunit.hrl").
 -include("gen_utp_tests_setup.hrl").
-
-port_number_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-             {"port number range test",
-              fun port_number_range/0}
-     end}.
-
-port_number_range() ->
-    Error = {error, function_clause},
-    ?assertMatch(Error,
-                 try gen_utp:listen(-1) catch C1:R1 -> {C1,R1} end),
-    ?assertMatch(Error,
-                 try gen_utp:listen(65536) catch C2:R2 -> {C2,R2} end),
-    ?assertMatch(Error,
-                 try gen_utp:connect("localhost", -1)
-                 catch C3:R3 -> {C3,R3} end),
-    ?assertMatch(Error,
-                 try gen_utp:connect("localhost", 0) catch C4:R4 -> {C4,R4} end),
-    ?assertMatch(Error,
-                 try gen_utp:connect("localhost", 65536)
-                 catch C5:R5 -> {C5,R5} end),
-    ok.
-
-listen_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-             {inorder,
-              [{"simple listen test",
-                fun simple_listen/0},
-               {"listen not connected test",
-                fun listen_notconn/0},
-               {"two listen test",
-                fun two_listen/0},
-               {"specific interface listen test",
-                fun specific_interface/0},
-               {"async accept test",
-                fun async_accept/0},
-               {"accept timeout test",
-                fun accept_timeout/0}
-              ]}
-     end}.
-
-simple_listen() ->
-    Ports = length(erlang:ports()),
-    {ok, LSock} = gen_utp:listen(0),
-    ?assert(erlang:is_port(LSock)),
-    ?assertEqual(Ports+1, length(erlang:ports())),
-    Self = self(),
-    ?assertMatch({connected, Self}, erlang:port_info(LSock, connected)),
-    ?assertMatch({error, enotconn}, gen_utp:send(LSock, <<"send">>)),
-    {ok, {Addr, Port}} = gen_utp:sockname(LSock),
-    ?assert(is_tuple(Addr)),
-    ?assert(is_number(Port)),
-    ?assertEqual({ok, Port}, gen_utp:port(LSock)),
-    ?assertMatch({error, enotconn}, gen_utp:peername(LSock)),
-    ?assertMatch(ok, gen_utp:close(LSock)),
-    ?assertMatch(undefined, erlang:port_info(LSock)),
-    ?assertEqual(Ports, length(erlang:ports())),
-    ok.
-
-listen_notconn() ->
-    {ok, LSock} = gen_utp:listen(0),
-    ?assertMatch({error,enotconn}, gen_utp:send(LSock, "data")),
-    ?assertMatch({error,enotconn}, gen_utp:recv(LSock, 0, 1000)),
-    ok.
-
-two_listen() ->
-    {ok, LSock1} = gen_utp:listen(0),
-    {ok, {_, Port1}} = gen_utp:sockname(LSock1),
-    ?assertMatch(ok, gen_utp:close(LSock1)),
-    {ok, LSock2} = gen_utp:listen(Port1),
-    ?assertNotEqual(LSock1, LSock2),
-    {ok, {_, Port2}} = gen_utp:sockname(LSock2),
-    ?assertEqual(Port1, Port2),
-    {ok, LSock3} = gen_utp:listen(0),
-    {ok, {_, Port3}} = gen_utp:sockname(LSock3),
-    ?assertNotEqual(Port2, Port3),
-    ?assertMatch(ok, gen_utp:close(LSock2)),
-    ok.
-
-specific_interface() ->
-    {ok, LSock1} = gen_utp:listen(0, [{ip, "127.0.0.1"}]),
-    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock1)),
-    ?assertMatch(ok, gen_utp:close(LSock1)),
-    {ok, LSock2} = gen_utp:listen(0, [{ifaddr, "127.0.0.1"}]),
-    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock2)),
-    ?assertMatch(ok, gen_utp:close(LSock2)),
-    {ok, LSock3} = gen_utp:listen(0, [{ip, {127,0,0,1}}]),
-    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock3)),
-    ?assertMatch(ok, gen_utp:close(LSock3)),
-    {ok, LSock4} = gen_utp:listen(0, [{ifaddr, {127,0,0,1}}]),
-    ?assertMatch({ok, {{127,0,0,1}, _}}, gen_utp:sockname(LSock4)),
-    ?assertMatch(ok, gen_utp:close(LSock4)),
-    ok.
-
-async_accept() ->
-    {ok, LSock} = gen_utp:listen(0),
-    ?assertMatch(ok, gen_utp:async_accept(LSock)),
-    ok.
-
-accept_timeout() ->
-    {ok, LSock} = gen_utp:listen(0),
-    ?assertMatch({error, etimedout}, gen_utp:accept(LSock, 2000)),
-    ok.
 
 client_timeout_test_() ->
     {setup,
