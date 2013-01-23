@@ -23,19 +23,7 @@
 -author('Steve Vinoski <vinoski@ieee.org>').
 
 -include_lib("eunit/include/eunit.hrl").
-
-setup() ->
-    gen_utp:start_link().
-
-cleanup(_) ->
-    gen_utp:stop(),
-    Check = fun(F) ->
-                    case whereis(gen_utp) of
-                        undefined -> ok;
-                        _ -> F(F)
-                    end
-            end,
-    Check(Check).
+-include("gen_utp_tests_setup.hrl").
 
 port_number_test_() ->
     {setup,
@@ -573,13 +561,13 @@ invalid_accept() ->
     {ok, LSock} = gen_utp:listen(0),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     ok = gen_utp:async_accept(LSock),
-    Pid = spawn(fun() ->
-                        {ok,_} = gen_utp:connect("localhost", Port),
-                        receive
-                            exit ->
-                                ok
-                        end
-                end),
+    spawn(fun() ->
+                  {ok,_} = gen_utp:connect("localhost", Port),
+                  receive
+                      exit ->
+                          ok
+                  end
+          end),
     receive
         {utp_async, S, _} ->
             ?assertMatch({error,einval}, gen_utp:accept(S)),

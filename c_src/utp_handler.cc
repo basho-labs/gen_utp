@@ -33,7 +33,8 @@ using namespace UtpDrv;
 UtpDrv::UtpHandler::UtpHandler(int sock, const SockOpts& so) :
     SocketHandler(sock, so),
     caller(driver_term_nil), utp(0), recv_len(0), status(not_connected), state(0),
-    error_code(0), writable(false), sender_waiting(false), receiver_waiting(false)
+    error_code(0), writable(false), sender_waiting(false), receiver_waiting(false),
+    close_pending(false)
 {
     write_q_mutex = erl_drv_mutex_create(const_cast<char*>("write_q_mutex"));
 }
@@ -246,9 +247,10 @@ UtpDrv::UtpHandler::close(const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACER << "UtpHandler::close " << this << UTPDRV_TRACE_ENDL;
     const char* retval = "ok";
-    if (status != closing && status != destroying) {
+    if (!close_pending && status != closing && status != destroying) {
         MutexLocker lock(utp_mutex);
         status = closing;
+        close_pending = true;
         if (utp != 0) {
             try {
                 EiDecoder decoder(buf, len);
@@ -481,18 +483,28 @@ UtpDrv::UtpHandler::do_state_change(int s)
     case UTP_STATE_DESTROYING:
         MainHandler::stop_input(udp_sock);
         if (status == closing) {
-            ErlDrvTermData term[] = {
-                ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
-                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
-                ERL_DRV_TUPLE, 2,
-            };
-            if (caller != driver_term_nil) {
-                driver_send_term(port, caller, term, sizeof term/sizeof *term);
-            } else {
+            if (close_pending && caller_ref) {
+                ErlDrvTermData term[] = {
+                    ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
+                    ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
+                    ERL_DRV_TUPLE, 2,
+                };
+                if (caller != driver_term_nil) {
+                    driver_send_term(port, caller, term, sizeof term/sizeof *term);
+                } else {
+                    MutexLocker lock(drv_mutex);
+                    driver_output_term(port, term, sizeof term/sizeof *term);
+                }
+                caller = driver_term_nil;
+            } else if (sockopts.active != ACTIVE_FALSE) {
+                ErlDrvTermData term[] = {
+                    ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_closed")),
+                    ERL_DRV_PORT, driver_mk_port(port),
+                    ERL_DRV_TUPLE, 2,
+                };
                 MutexLocker lock(drv_mutex);
                 driver_output_term(port, term, sizeof term/sizeof *term);
             }
-            caller = driver_term_nil;
             writable = false;
             status = destroying;
         } else if (status == stopped) {
@@ -527,6 +539,16 @@ UtpDrv::UtpHandler::do_error(int errcode)
     case connected:
         if (errcode == ECONNRESET) {
             close_utp();
+        } else if (sockopts.active != ACTIVE_FALSE) {
+            ErlDrvTermData term[] = {
+                ERL_DRV_ATOM,
+                driver_mk_atom(const_cast<char*>("utp_error")),
+                ERL_DRV_PORT, driver_mk_port(port),
+                ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(errcode)),
+                ERL_DRV_TUPLE, 3
+            };
+            MutexLocker lock(drv_mutex);
+            driver_output_term(port, term, sizeof term/sizeof *term);
         }
         break;
     default:

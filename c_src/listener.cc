@@ -109,7 +109,19 @@ UtpDrv::Listener::input_ready()
         if (res == 0) {
             break;
         } else if (res < 0 && errno != EINTR) {
+            int err = errno;
             ::close(sock);
+            if (sockopts.active != ACTIVE_FALSE) {
+                ErlDrvTermData term[] = {
+                    ERL_DRV_ATOM,
+                    driver_mk_atom(const_cast<char*>("utp_error")),
+                    ERL_DRV_PORT, driver_mk_port(port),
+                    ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
+                    ERL_DRV_TUPLE, 3
+                };
+                MutexLocker lock(drv_mutex);
+                driver_output_term(port, term, sizeof term/sizeof *term);
+            }
             return;
         }
     }
