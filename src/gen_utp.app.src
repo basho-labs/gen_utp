@@ -1,12 +1,13 @@
 {application, gen_utp,
  [
   {description, "uTP Protocol API and driver"},
-  {vsn, "0.2.0"},
-  {registered, []},
+  {vsn, "0.3.0"},
+  {registered, [gen_utp, utpdrv]},
   {applications, [
                   kernel,
                   stdlib
                  ]},
+  {mod, {gen_utp_app,[]}},
   {env, [
         ]}
  ]}.
