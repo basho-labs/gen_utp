@@ -24,6 +24,7 @@
 // -------------------------------------------------------------------
 
 #include <vector>
+#include <list>
 #include <string>
 #include "handler.h"
 #include "drv_types.h"
@@ -136,7 +137,8 @@ protected:
     getopts(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
 
     virtual ErlDrvSSizeT
-    peername(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen) = 0;
+    peername(const char* buf, ErlDrvSizeT len, char** rbuf,
+             ErlDrvSizeT rlen) = 0;
 
     // In the send_read_buffer function, a Receiver object is used to
     // determine where to send the data. If the send_to_connected field is
@@ -154,9 +156,15 @@ protected:
 
     bool
     send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
-                     ErlDrvSizeT& new_queue_size,
-                     const ustring* extra_data = 0);
+                     ErlDrvSizeT& new_queue_size);
 
+    void reduce_read_count(size_t reduction);
+
+    size_t
+    move_read_data(const SysIOVec* vec, int vlen, ustring& buf, size_t sz);
+
+    typedef std::list<size_t> ReadCount;
+    ReadCount read_count;
     SockOpts sockopts;
     ErlDrvPDL pdl;
     int udp_sock;

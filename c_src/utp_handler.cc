@@ -130,6 +130,7 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
     ErlDrvTermData local_caller, utp_reply;
     local_caller = driver_caller(port);
     utp_reply = driver_mk_atom(const_cast<char*>("utp_reply"));
+    size_t write_total = 0;
     if (writable) {
         if (ev.size > 0) {
             MutexLocker lock(write_q_mutex);
@@ -153,6 +154,7 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
                     break;
                 }
                 write_queue.push_back(pbin);
+                write_total += sockopts.packet;
             }
             for (int i = 0; i < ev.vsize; ++i) {
                 ErlDrvBinary* bin = 0;
@@ -168,10 +170,11 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
                     write_queue.push_back(bin);
                 }
             }
+            write_total += ev.size;
         }
         {
             MutexLocker lock(utp_mutex);
-            writable = UTP_Write(utp, write_queue.size());
+            writable = UTP_Write(utp, write_total);
         }
         ErlDrvTermData term[] = {
             ERL_DRV_ATOM, utp_reply,
@@ -392,6 +395,36 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
         {
             PdlLocker pdl_lock(pdl);
             driver_enq(port, buf, count);
+        }
+        const byte* end = bytes + count;
+        const byte* p = bytes;
+        union {
+            byte p1;
+            uint16_t p2;
+            uint32_t p4;
+        };
+        while (p < end) {
+            switch (sockopts.packet) {
+            case 0:
+                read_count.push_back(count);
+                p = end;
+                break;
+            case 1:
+                p1 = *p;
+                read_count.push_back(p1);
+                p += p1 + 1;
+                break;
+            case 2:
+                p2 = ntohs(*p);
+                read_count.push_back(p2);
+                p += p2 + 2;
+                break;
+            case 4:
+                p4 = ntohl(*p);
+                read_count.push_back(p4);
+                p += p4 + 4;
+                break;
+            }
         }
         if (sockopts.active == ACTIVE_FALSE) {
             if (receiver_waiting) {

@@ -155,10 +155,41 @@ UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
     sockopts = opts;
-    if (sockopts.active != saved_active && sockopts.active != ACTIVE_FALSE) {
+    bool send = false;
+    size_t to_send = 0;
+    MutexLocker lock(utp_mutex);
+    switch (saved_active) {
+    case ACTIVE_FALSE:
+        switch (sockopts.active) {
+        case ACTIVE_FALSE:
+            break;
+        case ACTIVE_ONCE:
+            if (read_count.size() > 0) {
+                send = true;
+                to_send = read_count.front();
+            }
+            break;
+        case ACTIVE_TRUE:
+            send = true;
+            break;
+        }
+        break;
+    case ACTIVE_ONCE:
+    case ACTIVE_TRUE:
+        switch (sockopts.active) {
+        case ACTIVE_FALSE:
+        case ACTIVE_ONCE:
+            break;
+        case ACTIVE_TRUE:
+            send = true;
+            break;
+        }
+        break;
+    }
+    if (send) {
         Receiver rcvr;
         ErlDrvSizeT qsize;
-        send_read_buffer(0, rcvr, qsize);
+        send_read_buffer(to_send, rcvr, qsize);
     }
 
     EiEncoder encoder;
@@ -242,121 +273,158 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
 }
 
 bool
-UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
-                                        ErlDrvSizeT& new_qsize,
-                                        const ustring* extra)
+UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len,
+                                        const Receiver& receiver,
+                                        ErlDrvSizeT& new_qsize)
 {
-    ErlDrvSizeT total = 0;
+    PdlLocker pdl_lock(pdl);
+    new_qsize = driver_sizeq(port);
+    if (new_qsize == 0 || new_qsize < len || new_qsize < sockopts.packet) {
+        return false;
+    }
+    size_t pkts_to_send = 1;
+    uint32_t pkt_size = 0;
     ustring buf;
-    {
-        int vlen;
-        PdlLocker pdl_lock(pdl);
-        new_qsize = driver_sizeq(port);
-        if (new_qsize == 0 || new_qsize < len || new_qsize < sockopts.packet) {
+    int vlen;
+    SysIOVec* vec = driver_peekq(port, &vlen);
+    switch (sockopts.packet) {
+    case 1:
+        pkt_size = *reinterpret_cast<unsigned char*>(vec[0].iov_base);
+        break;
+    case 2:
+        pkt_size = ntohs(*reinterpret_cast<uint16_t*>(vec[0].iov_base));
+        break;
+    case 4:
+        pkt_size = ntohl(*reinterpret_cast<uint32_t*>(vec[0].iov_base));
+        break;
+    }
+    if (pkt_size != 0) {
+        if (new_qsize < (sockopts.packet + pkt_size)) {
             return false;
         }
-        SysIOVec* vec = driver_peekq(port, &vlen);
-        uint32_t pkt_size = 0;
-        switch (sockopts.packet) {
-        case 0:
-            // nothing to do
-            break;
-        case 1:
-            pkt_size = *reinterpret_cast<unsigned char*>(vec[0].iov_base);
-            break;
-        case 2:
-            pkt_size = ntohs(*reinterpret_cast<uint16_t*>(vec[0].iov_base));
-            break;
-        case 4:
-            pkt_size = ntohl(*reinterpret_cast<uint32_t*>(vec[0].iov_base));
-            break;
+        driver_deq(port, sockopts.packet);
+        vec = driver_peekq(port, &vlen);
+        new_qsize = move_read_data(vec, vlen, buf, pkt_size);
+        reduce_read_count(pkt_size);
+    } else if (sockopts.active == ACTIVE_FALSE) {
+        if (len == 0) {
+            pkt_size = new_qsize;
+            read_count.clear();
+        } else {
+            pkt_size = len;
+            reduce_read_count(pkt_size);
         }
-        if (pkt_size != 0) {
-            if (new_qsize < (sockopts.packet + pkt_size)) {
-                return false;
+        new_qsize = move_read_data(vec, vlen, buf, pkt_size);
+    } else {
+        if (sockopts.active == ACTIVE_TRUE) {
+            pkts_to_send = read_count.size();
+        }
+    }
+
+    while (pkts_to_send-- > 0) {
+        if (buf.size() == 0) {
+            pkt_size = read_count.front();
+            read_count.pop_front();
+            new_qsize = move_read_data(vec, vlen, buf, pkt_size);
+        }
+        if (receiver.send_to_connected) {
+            int index = 0;
+            ErlDrvTermData term[2*sockopts.header+11];
+            term[index++] = ERL_DRV_ATOM;
+            term[index++] = driver_mk_atom(const_cast<char*>("utp"));
+            term[index++] = ERL_DRV_PORT;
+            term[index++] = driver_mk_port(port);
+            const unsigned char* p = buf.data();
+            for (int i = 0; i < sockopts.header; ++i, index += 2) {
+                term[index] = ERL_DRV_UINT;
+                term[index+1] = *p++;
             }
-            driver_deq(port, sockopts.packet);
+            if (sockopts.delivery_mode == DATA_LIST) {
+                term[index++] = ERL_DRV_STRING;
+            } else {
+                term[index++] = ERL_DRV_BUF2BINARY;
+            }
+            term[index++] = reinterpret_cast<ErlDrvTermData>(p);
+            term[index++] = pkt_size - sockopts.header;
+            if (sockopts.header != 0) {
+                term[index++] = ERL_DRV_LIST;
+                term[index++] = sockopts.header + 1;
+            }
+            term[index++] = ERL_DRV_TUPLE;
+            term[index++] = 3;
+            MutexLocker lock(drv_mutex);
+            driver_output_term(port, term, index);
+        } else {
+            int index = 0;
+            ErlDrvTermData term[2*sockopts.header+14];
+            term[index++] = ERL_DRV_EXT2TERM;
+            term[index++] = receiver.caller_ref;
+            term[index++] = receiver.caller_ref.size();
+            term[index++] = ERL_DRV_ATOM;
+            term[index++] = driver_mk_atom(const_cast<char*>("ok"));
+            const unsigned char* p = buf.data();
+            for (int i = 0; i < sockopts.header; ++i, index += 2) {
+                term[index] = ERL_DRV_UINT;
+                term[index+1] = *p++;
+            }
+            term[index++] = ERL_DRV_BUF2BINARY;
+            term[index++] = reinterpret_cast<ErlDrvTermData>(p);
+            term[index++] = pkt_size - sockopts.header;
+            if (sockopts.header != 0) {
+                term[index++] = ERL_DRV_LIST;
+                term[index++] = sockopts.header + 1;
+            }
+            term[index++] = ERL_DRV_TUPLE;
+            term[index++] = 2;
+            term[index++] = ERL_DRV_TUPLE;
+            term[index++] = 2;
+            driver_send_term(port, receiver.caller, term, index);
+        }
+        if (pkts_to_send != 0) {
+            buf.clear();
             vec = driver_peekq(port, &vlen);
         }
-        if (len == 0) {
-            for (int i = 0; i < vlen; ++i) {
-                total += vec[i].iov_len;
-            }
-        } else {
-            total = len;
-        }
-        ErlDrvSizeT deq_size = total;
-        if (extra != 0) {
-            total += extra->size();
-        }
-        buf.reserve(total);
-        for (int i = 0; i < vlen; ++i) {
-            buf.append(reinterpret_cast<unsigned char*>(vec[i].iov_base),
-                       vec[i].iov_len);
-        }
-        if (extra != 0) {
-            buf.append(*extra);
-        }
-        driver_deq(port, deq_size);
-        new_qsize = driver_sizeq(port);
-    }
-    if (receiver.send_to_connected) {
-        int index = 0;
-        ErlDrvTermData term[2*sockopts.header+11];
-        term[index++] = ERL_DRV_ATOM;
-        term[index++] = driver_mk_atom(const_cast<char*>("utp"));
-        term[index++] = ERL_DRV_PORT;
-        term[index++] = driver_mk_port(port);
-        const unsigned char* p = buf.data();
-        for (int i = 0; i < sockopts.header; ++i, index += 2) {
-            term[index] = ERL_DRV_UINT;
-            term[index+1] = *p++;
-        }
-        if (sockopts.delivery_mode == DATA_LIST) {
-            term[index++] = ERL_DRV_STRING;
-        } else {
-            term[index++] = ERL_DRV_BUF2BINARY;
-        }
-        term[index++] = reinterpret_cast<ErlDrvTermData>(p);
-        term[index++] = total - sockopts.header;
-        if (sockopts.header != 0) {
-            term[index++] = ERL_DRV_LIST;
-            term[index++] = sockopts.header + 1;
-        }
-        term[index++] = ERL_DRV_TUPLE;
-        term[index++] = 3;
-        MutexLocker lock(drv_mutex);
-        driver_output_term(port, term, index);
-    } else {
-        int index = 0;
-        ErlDrvTermData term[2*sockopts.header+14];
-        term[index++] = ERL_DRV_EXT2TERM;
-        term[index++] = receiver.caller_ref;
-        term[index++] = receiver.caller_ref.size();
-        term[index++] = ERL_DRV_ATOM;
-        term[index++] = driver_mk_atom(const_cast<char*>("ok"));
-        const unsigned char* p = buf.data();
-        for (int i = 0; i < sockopts.header; ++i, index += 2) {
-            term[index] = ERL_DRV_UINT;
-            term[index+1] = *p++;
-        }
-        term[index++] = ERL_DRV_BUF2BINARY;
-        term[index++] = reinterpret_cast<ErlDrvTermData>(p);
-        term[index++] = total - sockopts.header;
-        if (sockopts.header != 0) {
-            term[index++] = ERL_DRV_LIST;
-            term[index++] = sockopts.header + 1;
-        }
-        term[index++] = ERL_DRV_TUPLE;
-        term[index++] = 2;
-        term[index++] = ERL_DRV_TUPLE;
-        term[index++] = 2;
-        driver_send_term(port, receiver.caller, term, index);
     }
     if (sockopts.active == ACTIVE_ONCE) {
         sockopts.active = ACTIVE_FALSE;
     }
     return true;
+}
+
+void
+UtpDrv::SocketHandler::reduce_read_count(size_t reduction)
+{
+    size_t i = 0;
+    while (i < reduction) {
+        i += read_count.front();
+        read_count.pop_front();
+        if (i > reduction) {
+            read_count.push_front(i - reduction);
+        }
+    }
+}
+
+size_t
+UtpDrv::SocketHandler::move_read_data(const SysIOVec* vec, int vlen,
+                                      ustring& buf, size_t pkt_size)
+{
+    size_t total = 0;
+    buf.reserve(pkt_size);
+    for (int i = 0; i < vlen; ++i) {
+        size_t needed = pkt_size - total;
+        bool stop = true;
+        if (needed > vec[i].iov_len) {
+            needed = vec[i].iov_len;
+            stop = false;
+        }
+        buf.append(reinterpret_cast<unsigned char*>(vec[i].iov_base), needed);
+        total += needed;
+        if (stop) {
+            break;
+        }
+    }
+    driver_deq(port, pkt_size);
+    return driver_sizeq(port);
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
