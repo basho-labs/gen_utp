@@ -156,7 +156,6 @@ UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
     }
     sockopts = opts;
     bool send = false;
-    size_t to_send = 0;
     MutexLocker lock(utp_mutex);
     switch (saved_active) {
     case ACTIVE_FALSE:
@@ -166,7 +165,6 @@ UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
         case ACTIVE_ONCE:
             if (read_count.size() > 0) {
                 send = true;
-                to_send = read_count.front();
             }
             break;
         case ACTIVE_TRUE:
@@ -189,7 +187,7 @@ UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
     if (send) {
         Receiver rcvr;
         ErlDrvSizeT qsize;
-        send_read_buffer(to_send, rcvr, qsize);
+        send_read_buffer(0, rcvr, qsize);
     }
 
     EiEncoder encoder;

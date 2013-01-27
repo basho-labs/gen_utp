@@ -396,36 +396,7 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
             PdlLocker pdl_lock(pdl);
             driver_enq(port, buf, count);
         }
-        const byte* end = bytes + count;
-        const byte* p = bytes;
-        union {
-            byte p1;
-            uint16_t p2;
-            uint32_t p4;
-        };
-        while (p < end) {
-            switch (sockopts.packet) {
-            case 0:
-                read_count.push_back(count);
-                p = end;
-                break;
-            case 1:
-                p1 = *p;
-                read_count.push_back(p1);
-                p += p1 + 1;
-                break;
-            case 2:
-                p2 = ntohs(*p);
-                read_count.push_back(p2);
-                p += p2 + 2;
-                break;
-            case 4:
-                p4 = ntohl(*p);
-                read_count.push_back(p4);
-                p += p4 + 4;
-                break;
-            }
-        }
+        read_count.push_back(count);
         if (sockopts.active == ACTIVE_FALSE) {
             if (receiver_waiting) {
                 Receiver rcvr(false, caller, caller_ref);

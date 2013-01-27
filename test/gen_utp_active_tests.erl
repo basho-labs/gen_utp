@@ -64,7 +64,7 @@ active_false() ->
     ok.
 
 active_once() ->
-    {ok, LSock} = gen_utp:listen(0, [{mode,binary},{active,false},{packet,1}]),
+    {ok, LSock} = gen_utp:listen(0, [{mode,list},{active,false},{packet,1}]),
     ok = gen_utp:async_accept(LSock),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     {ok, Sock} = gen_utp:connect("localhost", Port, [binary,{packet,1}]),
@@ -80,13 +80,18 @@ active_once() ->
                         ok = gen_utp:setopts(ASock, [{active,once}]),
                         receive
                             {utp, ASock, Word} ->
-                                Fn(Fn, [binary_to_list(Word)|Acc])
+                                case lists:reverse(Word) of
+                                    [$.|_] ->
+                                        lists:reverse([Word|Acc]);
+                                    _ ->
+                                        Fn(Fn, [Word|Acc])
+                                end
                         after
                             500 ->
                                 lists:reverse(Acc)
                         end
                 end,
-            ?assertMatch(Words, F(F, [])),
+            ?assertMatch(Words, F(F,[])),
             ok = gen_utp:close(ASock),
             ok = gen_utp:close(Sock)
     after
@@ -119,7 +124,7 @@ active_true() ->
                                 Bin
                         end
                 end,
-            ?assertMatch(AllBin, F(F, <<>>)),
+            ?assertMatch(AllBin, F(F,<<>>)),
             ok = gen_utp:close(ASock),
             ok = gen_utp:close(Sock)
     after
