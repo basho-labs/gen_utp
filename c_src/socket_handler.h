@@ -166,7 +166,6 @@ protected:
     typedef std::list<size_t> ReadCount;
     ReadCount read_count;
     SockOpts sockopts;
-    ErlDrvPDL pdl;
     int udp_sock;
 };
 

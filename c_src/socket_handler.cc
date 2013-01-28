@@ -35,12 +35,12 @@ UtpDrv::SocketHandler::~SocketHandler()
 {
 }
 
-UtpDrv::SocketHandler::SocketHandler() : pdl(0), udp_sock(INVALID_SOCKET)
+UtpDrv::SocketHandler::SocketHandler() : udp_sock(INVALID_SOCKET)
 {
 }
 
 UtpDrv::SocketHandler::SocketHandler(int fd, const SockOpts& so) :
-    sockopts(so), pdl(0), udp_sock(fd)
+    sockopts(so), udp_sock(fd)
 {
 }
 
@@ -49,10 +49,6 @@ UtpDrv::SocketHandler::set_port(ErlDrvPort p)
 {
     UTPDRV_TRACER << "SocketHandler::set_port " << this << UTPDRV_TRACE_ENDL;
     Handler::set_port(p);
-    pdl = driver_pdl_create(port);
-    if (pdl == 0) {
-        driver_failure_atom(port, const_cast<char*>("port_data_lock_failed"));
-    }
 }
 
 int
@@ -275,7 +271,6 @@ UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len,
                                         const Receiver& receiver,
                                         ErlDrvSizeT& new_qsize)
 {
-    PdlLocker pdl_lock(pdl);
     new_qsize = driver_sizeq(port);
     if (new_qsize == 0 || new_qsize < len || new_qsize < sockopts.packet) {
         return false;

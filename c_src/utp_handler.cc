@@ -230,12 +230,9 @@ UtpDrv::UtpHandler::stop()
         MutexLocker lock(utp_mutex);
         close_utp();
     }
-    {
-        PdlLocker pdl_lock(pdl);
-        ErlDrvSizeT qsize = driver_sizeq(port);
-        if (qsize != 0) {
-            driver_deq(port, qsize);
-        }
+    ErlDrvSizeT qsize = driver_sizeq(port);
+    if (qsize != 0) {
+        driver_deq(port, qsize);
     }
     if (status == destroying) {
         delete this;
@@ -392,10 +389,7 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
     if (count != 0) {
         ErlDrvSizeT qsize = 1; // any non-zero value will do
         char* buf = const_cast<char*>(reinterpret_cast<const char*>(bytes));
-        {
-            PdlLocker pdl_lock(pdl);
-            driver_enq(port, buf, count);
-        }
+        driver_enq(port, buf, count);
         read_count.push_back(count);
         if (sockopts.active == ACTIVE_FALSE) {
             if (receiver_waiting) {
@@ -427,12 +421,7 @@ size_t
 UtpDrv::UtpHandler::do_get_rb_size()
 {
     UTPDRV_TRACER << "UtpHandler::do_get_rb_size " << this << UTPDRV_TRACE_ENDL;
-    if (status == connected) {
-        PdlLocker pdl_lock(pdl);
-        return driver_sizeq(port);
-    } else {
-        return 0;
-    }
+    return status == connected ? driver_sizeq(port) : 0;
 }
 
 void
