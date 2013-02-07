@@ -78,3 +78,10 @@ UtpDrv::WriteQueue::pop_bytes(void* buf, size_t count)
         }
     }
 }
+
+void
+UtpDrv::WriteQueue::clear()
+{
+    queue.clear();
+    sz = offset = 0;
+}

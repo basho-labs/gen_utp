@@ -155,7 +155,7 @@ protected:
     };
 
     bool
-    send_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
+    emit_read_buffer(ErlDrvSizeT len, const Receiver& receiver,
                      ErlDrvSizeT& new_queue_size);
 
     void reduce_read_count(size_t reduction);
@@ -163,10 +163,14 @@ protected:
     size_t
     move_read_data(const SysIOVec* vec, int vlen, ustring& buf, size_t sz);
 
+    bool
+    emit_closed_message();
+
     typedef std::list<size_t> ReadCount;
     ReadCount read_count;
     SockOpts sockopts;
     int udp_sock;
+    bool close_pending;
 };
 
 }

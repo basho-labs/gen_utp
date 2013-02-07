@@ -5,7 +5,7 @@
 //
 // write_queue.h: queue for uTP write data
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -40,6 +40,8 @@ public:
     void pop_bytes(void* to, size_t count);
 
     size_t size() const { return sz; }
+
+    void clear();
 
 private:
     typedef std::list<ErlDrvBinary*> BinaryQueue;

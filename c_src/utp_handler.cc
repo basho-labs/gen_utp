@@ -33,8 +33,7 @@ using namespace UtpDrv;
 UtpDrv::UtpHandler::UtpHandler(int sock, const SockOpts& so) :
     SocketHandler(sock, so),
     caller(driver_term_nil), utp(0), recv_len(0), status(not_connected), state(0),
-    error_code(0), writable(false), sender_waiting(false), receiver_waiting(false),
-    close_pending(false)
+    error_code(0), writable(false), sender_waiting(false), receiver_waiting(false)
 {
     write_q_mutex = erl_drv_mutex_create(const_cast<char*>("write_q_mutex"));
 }
@@ -304,7 +303,7 @@ UtpDrv::UtpHandler::recv(const char* buf, ErlDrvSizeT len,
     ErlDrvTermData local_caller = driver_caller(port);
     Receiver rcvr(false, local_caller, ref);
     ErlDrvSizeT qsize = 1; // any non-zero value will do
-    bool sent = send_read_buffer(length, rcvr, qsize);
+    bool sent = emit_read_buffer(length, rcvr, qsize);
     if (sent && qsize == 0) {
         MutexLocker lock(utp_mutex);
         UTP_RBDrained(utp);
@@ -345,6 +344,12 @@ UtpDrv::UtpHandler::close_utp()
 {
     UTPDRV_TRACER << "UtpHandler::close_utp " << this << UTPDRV_TRACE_ENDL;
     if (utp != 0 && status != destroying) {
+        {
+            MutexLocker lock(write_q_mutex);
+            if (write_queue.size() != 0) {
+                return;
+            }
+        }
         status = closing;
         UTP_Close(utp);
         utp = 0;
@@ -394,13 +399,13 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
         if (sockopts.active == ACTIVE_FALSE) {
             if (receiver_waiting) {
                 Receiver rcvr(false, caller, caller_ref);
-                if (send_read_buffer(recv_len, rcvr, qsize)) {
+                if (emit_read_buffer(recv_len, rcvr, qsize)) {
                     reset_waiting_recv();
                 }
             }
         } else {
             Receiver rcvr;
-            send_read_buffer(0, rcvr, qsize);
+            emit_read_buffer(0, rcvr, qsize);
         }
         if (qsize == 0) {
             UTP_RBDrained(utp);
@@ -411,7 +416,8 @@ UtpDrv::UtpHandler::do_read(const byte* bytes, size_t count)
 void
 UtpDrv::UtpHandler::do_write(byte* bytes, size_t count)
 {
-    UTPDRV_TRACER << "UtpHandler::do_write " << this << UTPDRV_TRACE_ENDL;
+    UTPDRV_TRACER << "UtpHandler::do_write " << this
+                  << ": writing " << count << " bytes" << UTPDRV_TRACE_ENDL;
     if (count == 0) return;
     MutexLocker lock(write_q_mutex);
     write_queue.pop_bytes(bytes, count);
@@ -433,6 +439,10 @@ UtpDrv::UtpHandler::do_state_change(int s)
     state = s;
     switch (state) {
     case UTP_STATE_EOF:
+        {
+            MutexLocker lock(write_q_mutex);
+            write_queue.clear();
+        }
         if (status != stopped) {
             close_utp();
         }
@@ -442,8 +452,12 @@ UtpDrv::UtpHandler::do_state_change(int s)
     case UTP_STATE_WRITABLE:
         writable = true;
         {
-            size_t sz = write_queue.size();
-            if (sz > 0) {
+            size_t sz;
+            {
+                MutexLocker lock(write_q_mutex);
+                sz = write_queue.size();
+            }
+            if (sz != 0) {
                 writable = UTP_Write(utp, sz);
             }
         }
@@ -456,6 +470,9 @@ UtpDrv::UtpHandler::do_state_change(int s)
             };
             driver_send_term(port, caller, term, sizeof term/sizeof *term);
             sender_waiting = false;
+        }
+        if (close_pending) {
+            close_utp();
         }
         break;
 
@@ -489,14 +506,9 @@ UtpDrv::UtpHandler::do_state_change(int s)
                     driver_output_term(port, term, sizeof term/sizeof *term);
                 }
                 caller = driver_term_nil;
+                close_pending = false;
             } else if (sockopts.active != ACTIVE_FALSE) {
-                ErlDrvTermData term[] = {
-                    ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_closed")),
-                    ERL_DRV_PORT, driver_mk_port(port),
-                    ERL_DRV_TUPLE, 2,
-                };
-                MutexLocker lock(drv_mutex);
-                driver_output_term(port, term, sizeof term/sizeof *term);
+                emit_closed_message();
             }
             writable = false;
             status = destroying;

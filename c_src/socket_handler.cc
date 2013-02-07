@@ -35,12 +35,13 @@ UtpDrv::SocketHandler::~SocketHandler()
 {
 }
 
-UtpDrv::SocketHandler::SocketHandler() : udp_sock(INVALID_SOCKET)
+UtpDrv::SocketHandler::SocketHandler() :
+    udp_sock(INVALID_SOCKET), close_pending(false)
 {
 }
 
 UtpDrv::SocketHandler::SocketHandler(int fd, const SockOpts& so) :
-    sockopts(so), udp_sock(fd)
+    sockopts(so), udp_sock(fd), close_pending(false)
 {
 }
 
@@ -183,7 +184,7 @@ UtpDrv::SocketHandler::setopts(const char* buf, ErlDrvSizeT len,
     if (send) {
         Receiver rcvr;
         ErlDrvSizeT qsize;
-        send_read_buffer(0, rcvr, qsize);
+        emit_read_buffer(0, rcvr, qsize);
     }
 
     EiEncoder encoder;
@@ -267,10 +268,14 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
 }
 
 bool
-UtpDrv::SocketHandler::send_read_buffer(ErlDrvSizeT len,
+UtpDrv::SocketHandler::emit_read_buffer(ErlDrvSizeT len,
                                         const Receiver& receiver,
                                         ErlDrvSizeT& new_qsize)
 {
+    if (close_pending && emit_closed_message()) {
+        close_pending = false;
+        return false;
+    }
     new_qsize = driver_sizeq(port);
     if (new_qsize == 0 || new_qsize < len || new_qsize < sockopts.packet) {
         return false;
@@ -418,6 +423,22 @@ UtpDrv::SocketHandler::move_read_data(const SysIOVec* vec, int vlen,
     }
     driver_deq(port, pkt_size);
     return driver_sizeq(port);
+}
+
+bool
+UtpDrv::SocketHandler::emit_closed_message()
+{
+    ErlDrvSizeT qsize = driver_sizeq(port);
+    if (qsize == 0) {
+        ErlDrvTermData term[] = {
+            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_closed")),
+            ERL_DRV_PORT, driver_mk_port(port),
+            ERL_DRV_TUPLE, 2,
+        };
+        MutexLocker lock(drv_mutex);
+        driver_output_term(port, term, sizeof term/sizeof *term);
+    }
+    return qsize == 0;
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
