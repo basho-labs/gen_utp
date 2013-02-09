@@ -350,7 +350,6 @@ UtpDrv::SocketHandler::emit_read_buffer(ErlDrvSizeT len,
             }
             term[index++] = ERL_DRV_TUPLE;
             term[index++] = 3;
-            MutexLocker lock(drv_mutex);
             driver_output_term(port, term, index);
         } else {
             int index = 0;
@@ -435,7 +434,6 @@ UtpDrv::SocketHandler::emit_closed_message()
             ERL_DRV_PORT, driver_mk_port(port),
             ERL_DRV_TUPLE, 2,
         };
-        MutexLocker lock(drv_mutex);
         driver_output_term(port, term, sizeof term/sizeof *term);
     }
     return qsize == 0;

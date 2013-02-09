@@ -42,7 +42,6 @@ const int INVALID_SOCKET = -1;
 extern char* drv_name;
 
 extern ErlDrvMutex* utp_mutex;
-extern ErlDrvMutex* drv_mutex;
 
 const char* const endl = "\r\n";
 

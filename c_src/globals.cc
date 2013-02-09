@@ -2,7 +2,7 @@
 //
 // globals.h: uTP driver global variables
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -29,4 +29,3 @@ using namespace UtpDrv;
 char* UtpDrv::drv_name = const_cast<char*>("utpdrv");
 
 ErlDrvMutex* UtpDrv::utp_mutex = 0;
-ErlDrvMutex* UtpDrv::drv_mutex = 0;

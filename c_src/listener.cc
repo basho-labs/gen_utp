@@ -119,7 +119,6 @@ UtpDrv::Listener::input_ready()
                     ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
                     ERL_DRV_TUPLE, 3
                 };
-                MutexLocker lock(drv_mutex);
                 driver_output_term(port, term, sizeof term/sizeof *term);
             }
             return;
@@ -185,7 +184,6 @@ UtpDrv::Listener::input_ready()
             term[index++] = 2;
             term[index++] = ERL_DRV_TUPLE;
             term[index++] = 3;
-            MutexLocker lock(drv_mutex);
             driver_output_term(port, term, index);
         }
         acceptor_queue.pop_front();

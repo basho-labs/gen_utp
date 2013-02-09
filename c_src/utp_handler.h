@@ -110,7 +110,6 @@ protected:
 
     WriteQueue write_queue;
     Binary caller_ref;
-    ErlDrvMutex* write_q_mutex;
     ErlDrvTermData caller;
     UTPSocket* utp;
     ErlDrvSizeT recv_len;

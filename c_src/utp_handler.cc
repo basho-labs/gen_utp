@@ -35,12 +35,10 @@ UtpDrv::UtpHandler::UtpHandler(int sock, const SockOpts& so) :
     caller(driver_term_nil), utp(0), recv_len(0), status(not_connected), state(0),
     error_code(0), writable(false), sender_waiting(false), receiver_waiting(false)
 {
-    write_q_mutex = erl_drv_mutex_create(const_cast<char*>("write_q_mutex"));
 }
 
 UtpDrv::UtpHandler::~UtpHandler()
 {
-    erl_drv_mutex_destroy(write_q_mutex);
 }
 
 void
@@ -132,7 +130,6 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
     size_t write_total = 0;
     if (writable) {
         if (ev.size > 0) {
-            MutexLocker lock(write_q_mutex);
             if (sockopts.packet > 0) {
                 ErlDrvBinary* pbin = driver_alloc_binary(sockopts.packet);
                 union {
@@ -344,11 +341,8 @@ UtpDrv::UtpHandler::close_utp()
 {
     UTPDRV_TRACER << "UtpHandler::close_utp " << this << UTPDRV_TRACE_ENDL;
     if (utp != 0 && status != destroying) {
-        {
-            MutexLocker lock(write_q_mutex);
-            if (write_queue.size() != 0) {
-                return;
-            }
+        if (write_queue.size() != 0) {
+            return;
         }
         status = closing;
         UTP_Close(utp);
@@ -419,7 +413,6 @@ UtpDrv::UtpHandler::do_write(byte* bytes, size_t count)
     UTPDRV_TRACER << "UtpHandler::do_write " << this
                   << ": writing " << count << " bytes" << UTPDRV_TRACE_ENDL;
     if (count == 0) return;
-    MutexLocker lock(write_q_mutex);
     write_queue.pop_bytes(bytes, count);
 }
 
@@ -439,10 +432,7 @@ UtpDrv::UtpHandler::do_state_change(int s)
     state = s;
     switch (state) {
     case UTP_STATE_EOF:
-        {
-            MutexLocker lock(write_q_mutex);
-            write_queue.clear();
-        }
+        write_queue.clear();
         if (status != stopped) {
             close_utp();
         }
@@ -452,11 +442,7 @@ UtpDrv::UtpHandler::do_state_change(int s)
     case UTP_STATE_WRITABLE:
         writable = true;
         {
-            size_t sz;
-            {
-                MutexLocker lock(write_q_mutex);
-                sz = write_queue.size();
-            }
+            size_t sz = write_queue.size();
             if (sz != 0) {
                 writable = UTP_Write(utp, sz);
             }
@@ -483,7 +469,6 @@ UtpDrv::UtpHandler::do_state_change(int s)
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
                 ERL_DRV_TUPLE, 2,
             };
-            MutexLocker lock(drv_mutex);
             driver_output_term(port, term, sizeof term/sizeof *term);
         }
         status = connected;
@@ -502,7 +487,6 @@ UtpDrv::UtpHandler::do_state_change(int s)
                 if (caller != driver_term_nil) {
                     driver_send_term(port, caller, term, sizeof term/sizeof *term);
                 } else {
-                    MutexLocker lock(drv_mutex);
                     driver_output_term(port, term, sizeof term/sizeof *term);
                 }
                 caller = driver_term_nil;
@@ -537,7 +521,6 @@ UtpDrv::UtpHandler::do_error(int errcode)
                 ERL_DRV_TUPLE, 2,
                 ERL_DRV_TUPLE, 2,
             };
-            MutexLocker lock(drv_mutex);
             driver_output_term(port, term, sizeof term/sizeof *term);
         }
         break;
@@ -552,7 +535,6 @@ UtpDrv::UtpHandler::do_error(int errcode)
                 ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(errcode)),
                 ERL_DRV_TUPLE, 3
             };
-            MutexLocker lock(drv_mutex);
             driver_output_term(port, term, sizeof term/sizeof *term);
         }
         break;

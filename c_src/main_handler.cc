@@ -96,7 +96,6 @@ UtpDrv::MainHandler::start()
     UTPDRV_TRACER << "MainHandler::start\r\n";
     driver_set_timer(port, timeout_check);
     main_handler = this;
-    drv_mutex = erl_drv_mutex_create(const_cast<char*>("drv"));
     map_mutex = erl_drv_mutex_create(const_cast<char*>("utpmap"));
 }
 
@@ -106,7 +105,6 @@ UtpDrv::MainHandler::stop()
     UTPDRV_TRACER << "MainHandler::stop\r\n";
     driver_cancel_timer(port);
     erl_drv_mutex_destroy(map_mutex);
-    erl_drv_mutex_destroy(drv_mutex);
     main_handler = 0;
 }
 
