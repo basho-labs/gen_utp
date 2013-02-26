@@ -72,7 +72,9 @@ client_server_test_() ->
                {"packet size test",
                 fun packet_size/0},
                {"header size test",
-                fun header_size/0}
+                fun header_size/0},
+               {"set send/recv buffer sizes test",
+                fun buf_size/0}
               ]}
      end}.
 
@@ -513,5 +515,30 @@ header_size() ->
         2000 ->
             exit(failure)
     end,
+    ok = gen_utp:close(LSock),
+    ok.
+
+buf_size() ->
+    {ok, LSock} = gen_utp:listen(0, [{sndbuf,4096},{recbuf,8192},{active,false}]),
+    {ok, {_, Port}} = gen_utp:sockname(LSock),
+    ok = gen_utp:async_accept(LSock),
+    {ok,S} = gen_utp:connect("localhost", Port, [{active,false}]),
+    {ok, [{sndbuf,Sndbuf}]} = gen_utp:getopts(S, [sndbuf]),
+    {ok, [{recbuf,Recbuf}]} = gen_utp:getopts(S, [recbuf]),
+    NSndbuf = Sndbuf*8,
+    NRecbuf = Recbuf*16,
+    ok = gen_utp:setopts(S, [{sndbuf,NSndbuf},{recbuf,NRecbuf}]),
+    {ok, [{sndbuf,NSndbuf}]} = gen_utp:getopts(S, [sndbuf]),
+    {ok, [{recbuf,NRecbuf}]} = gen_utp:getopts(S, [recbuf]),
+    receive
+        {utp_async, AS, _} ->
+            ?assertMatch({ok,[{sndbuf,4096}]}, gen_utp:getopts(AS, [sndbuf])),
+            ?assertMatch({ok,[{recbuf,8192}]}, gen_utp:getopts(AS, [recbuf])),
+            ok = gen_utp:close(AS)
+    after
+        2000 ->
+            exit(failure)
+    end,
+    ok = gen_utp:close(S),
     ok = gen_utp:close(LSock),
     ok.

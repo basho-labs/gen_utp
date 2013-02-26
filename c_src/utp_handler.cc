@@ -80,6 +80,8 @@ UtpDrv::UtpHandler::set_utp_callbacks()
             &UtpHandler::utp_overhead,
         };
         UTP_SetCallbacks(utp, &funcs, this);
+        UTP_SetSockopt(utp, SO_SNDBUF, UTP_SNDBUF_DEFAULT);
+        UTP_SetSockopt(utp, SO_RCVBUF, UTP_RECBUF_DEFAULT);
     }
 }
 
@@ -95,6 +97,8 @@ UtpDrv::UtpHandler::control(unsigned command, const char* buf, ErlDrvSizeT len,
         return recv(buf, len, rbuf, rlen);
     case UTP_CANCEL_RECV:
         return cancel_recv();
+    case UTP_SETOPTS:
+        return setopts(buf, len, rbuf, rlen);
     }
     return SocketHandler::control(command, buf, len, rbuf, rlen);
 }
@@ -235,6 +239,23 @@ UtpDrv::UtpHandler::stop()
     } else {
         status = stopped;
     }
+}
+
+ErlDrvSSizeT
+UtpDrv::UtpHandler::setopts(const char* buf, ErlDrvSizeT len,
+                            char** rbuf, ErlDrvSizeT rlen)
+{
+    UTPDRV_TRACER << "UtpHandler::setopts " << this << UTPDRV_TRACE_ENDL;
+    int saved_sndbuf = sockopts.sndbuf;
+    int saved_recbuf = sockopts.recbuf;
+    ErlDrvSSizeT result = SocketHandler::setopts(buf, len, rbuf, rlen);
+    if (saved_sndbuf != sockopts.sndbuf) {
+        UTP_SetSockopt(utp, SO_SNDBUF, sockopts.sndbuf);
+    }
+    if (saved_recbuf != sockopts.recbuf) {
+        UTP_SetSockopt(utp, SO_RCVBUF, sockopts.recbuf);
+    }
+    return result;
 }
 
 ErlDrvSSizeT

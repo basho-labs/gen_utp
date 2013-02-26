@@ -251,6 +251,14 @@ UtpDrv::SocketHandler::getopts(const char* buf, ErlDrvSizeT len,
                 encoder.tuple_header(2).atom("packet");
                 encoder.ulongval(sockopts.packet);
                 break;
+            case UTP_SNDBUF_OPT:
+                encoder.tuple_header(2).atom("sndbuf");
+                encoder.ulongval(sockopts.sndbuf);
+                break;
+            case UTP_RECBUF_OPT:
+                encoder.tuple_header(2).atom("recbuf");
+                encoder.ulongval(sockopts.recbuf);
+                break;
             default:
             {
                 EiEncoder error;
@@ -440,7 +448,8 @@ UtpDrv::SocketHandler::emit_closed_message()
 }
 
 UtpDrv::SocketHandler::SockOpts::SockOpts() :
-    send_tmout(-1), active(ACTIVE_TRUE), fd(-1), header(0), port(0),
+    send_tmout(-1), active(ACTIVE_TRUE), fd(-1), header(0),
+    sndbuf(UTP_SNDBUF_DEFAULT), recbuf(UTP_RECBUF_DEFAULT), port(0),
     delivery_mode(DATA_LIST), packet(0), inet6(false), addr_set(false)
 {
 }
@@ -523,6 +532,20 @@ UtpDrv::SocketHandler::SockOpts::decode(const Binary& bin, OptsList* opts_list)
                 opts_list->push_back(UTP_HEADER_OPT);
             }
             break;
+        case UTP_SNDBUF_OPT:
+            sndbuf = ntohl(*reinterpret_cast<const uint32_t*>(data));
+            data += 4;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_SNDBUF_OPT);
+            }
+            break;
+        case UTP_RECBUF_OPT:
+            recbuf = ntohl(*reinterpret_cast<const uint32_t*>(data));
+            data += 4;
+            if (opts_list != 0) {
+                opts_list->push_back(UTP_RECBUF_OPT);
+            }
+            break;
         }
     }
     if (addr_set) {
@@ -568,6 +591,12 @@ UtpDrv::SocketHandler::SockOpts::decode_and_merge(const Binary& bin)
             break;
         case UTP_HEADER_OPT:
             header = so.header;
+            break;
+        case UTP_SNDBUF_OPT:
+            sndbuf = so.sndbuf;
+            break;
+        case UTP_RECBUF_OPT:
+            recbuf = so.recbuf;
             break;
         }
     }

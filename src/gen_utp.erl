@@ -568,5 +568,17 @@ options_to_binary(UtpOpts) ->
                             <<>>;
                         HdrSize ->
                             <<?UTP_HEADER_OPT:8, HdrSize:16/big>>
+                    end,
+                    case UtpOpts#utp_options.sndbuf of
+                        undefined ->
+                            <<>>;
+                        SndBuf ->
+                            <<?UTP_SNDBUF_OPT:8, SndBuf:32/big>>
+                    end,
+                    case UtpOpts#utp_options.recbuf of
+                        undefined ->
+                            <<>>;
+                        RecBuf ->
+                            <<?UTP_RECBUF_OPT:8, RecBuf:32/big>>
                     end
                    ]).

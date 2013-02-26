@@ -76,6 +76,9 @@ protected:
     close(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
 
     virtual ErlDrvSSizeT
+    setopts(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
+
+    virtual ErlDrvSSizeT
     recv(const char* buf, ErlDrvSizeT len, char** rbuf, ErlDrvSizeT rlen);
 
     ErlDrvSSizeT cancel_send();

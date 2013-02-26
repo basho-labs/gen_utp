@@ -43,11 +43,15 @@
 -type utppacketopt() :: {packet, utppacketsize()}.
 -type utpheadersize() :: pos_integer().
 -type utpheaderopt() :: {header, utpheadersize()}.
+-type utpbufsize() :: pos_integer().
+-type utpbuftype() :: sndbuf | recbuf.
+-type utpsetbuf() :: {utpbuftype(), utpbufsize()}.
 -type utpopt() :: utpipopt() | utpportopt() | utpmodeopt() |
                   utpfamily() | utpsendopt() | utpactiveopt() |
-                  utppacketopt() | utpheaderopt().
+                  utppacketopt() | utpheaderopt() | utpsetbuf().
 -type utpopts() :: [utpopt()].
--type utpgetoptname() :: active | mode | send_timeout.
+-type utpgetoptname() :: active | mode | send_timeout |
+                         packet | header | utpbuftype().
 -type utpgetoptnames() :: [utpgetoptname()].
 
 
@@ -69,6 +73,10 @@ validate_names(OptNames) when is_list(OptNames) ->
                                  <<Bin/binary, ?UTP_PACKET_OPT:8>>;
                             (header, Bin) ->
                                  <<Bin/binary, ?UTP_HEADER_OPT:8>>;
+                            (sndbuf, Bin) ->
+                                 <<Bin/binary, ?UTP_SNDBUF_OPT:8>>;
+                            (recbuf, Bin) ->
+                                 <<Bin/binary, ?UTP_RECBUF_OPT:8>>;
                             (_, _) ->
                                  {error, einval}
                          end, <<>>, OptNames),
@@ -149,6 +157,14 @@ validate([{header,Sz}|Opts], UtpOpts)
     validate(Opts, UtpOpts#utp_options{header=Sz});
 validate([{header,_}=Hdr|_], _) ->
     erlang:error(badarg, [Hdr]);
+validate([{sndbuf,Sz}|Opts], UtpOpts) when is_integer(Sz), Sz > 0 ->
+    validate(Opts, UtpOpts#utp_options{sndbuf=Sz});
+validate([{sndbuf,_}=Hdr|_], _) ->
+    erlang:error(badarg, [Hdr]);
+validate([{recbuf,Sz}|Opts], UtpOpts) when is_integer(Sz), Sz > 0 ->
+    validate(Opts, UtpOpts#utp_options{recbuf=Sz});
+validate([{recbuf,_}=Hdr|_], _) ->
+    erlang:error(badarg, [Hdr]);
 validate([], UtpOpts) ->
     case UtpOpts#utp_options.header of
         undefined ->
@@ -205,6 +221,8 @@ validate_test() ->
     ?assertMatch(#utp_options{packet=2}, validate([{packet,2}])),
     ?assertMatch(#utp_options{packet=4}, validate([{packet,4}])),
     ?assertMatch(#utp_options{header=1}, validate([binary,{header,1}])),
+    ?assertMatch(#utp_options{sndbuf=16384}, validate([{sndbuf,16384}])),
+    ?assertMatch(#utp_options{recbuf=32768}, validate([{recbuf,32768}])),
 
     ?assertException(error, badarg, validate([{mode,bin}])),
     ?assertException(error, badarg, validate([{port,65536}])),
@@ -216,10 +234,12 @@ validate_test() ->
     ?assertException(error, badarg, validate([{ip,"1.2.3.4.5"}])),
     ?assertException(error, badarg, validate([{packet,3}])),
     ?assertException(error, badarg, validate([{header,1}])),
+    ?assertException(error, badarg, validate([{sndbuf,0}])),
+    ?assertException(error, badarg, validate([{recbuf,0}])),
     ok.
 
 validate_names_test() ->
-    OkOpts = [active,mode,send_timeout,packet,header],
+    OkOpts = [active,mode,send_timeout,packet,header,sndbuf,recbuf],
     ?assertMatch({ok,_}, validate_names(OkOpts)),
     ?assertMatch({error, einval}, validate_names([list])),
     ?assertMatch({error, einval}, validate_names([binary])),

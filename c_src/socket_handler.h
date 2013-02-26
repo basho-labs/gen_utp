@@ -59,6 +59,9 @@ struct SockAddr {
     operator const sockaddr*() const;
 };
 
+const int UTP_SNDBUF_DEFAULT = 16384;
+const int UTP_RECBUF_DEFAULT = 16384;
+
 class SocketHandler : public Handler
 {
 public:
@@ -77,7 +80,9 @@ public:
         UTP_SEND_TMOUT_INFINITE_OPT,
         UTP_ACTIVE_OPT,
         UTP_PACKET_OPT,
-        UTP_HEADER_OPT
+        UTP_HEADER_OPT,
+        UTP_SNDBUF_OPT,
+        UTP_RECBUF_OPT
     };
     typedef std::vector<Opts> OptsList;
 
@@ -99,6 +104,7 @@ public:
         Active active;
         int fd;
         int header;
+        int sndbuf, recbuf;
         unsigned short port;
         DeliveryMode delivery_mode;
         unsigned char packet;
