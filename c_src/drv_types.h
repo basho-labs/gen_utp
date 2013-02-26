@@ -49,6 +49,8 @@ public:
     const char* data() const;
     size_t size() const;
 
+    bool operator==(const Binary&) const;
+
     operator ErlDrvTermData() const;
     operator bool() const;
 

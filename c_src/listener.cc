@@ -58,7 +58,7 @@ UtpDrv::Listener::control(unsigned command, const char* buf, ErlDrvSizeT len,
     case UTP_ACCEPT:
         return accept(buf, len, rbuf, rlen);
     case UTP_CANCEL_ACCEPT:
-        return cancel_accept();
+        return cancel_accept(buf, len, rbuf, rlen);
     }
     return SocketHandler::control(command, buf, len, rbuf, rlen);
 }
@@ -111,16 +111,18 @@ UtpDrv::Listener::input_ready()
         } else if (res < 0 && errno != EINTR) {
             int err = errno;
             ::close(sock);
-            if (sockopts.active != ACTIVE_FALSE) {
-                ErlDrvTermData term[] = {
-                    ERL_DRV_ATOM,
-                    driver_mk_atom(const_cast<char*>("utp_error")),
-                    ERL_DRV_PORT, driver_mk_port(port),
-                    ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
-                    ERL_DRV_TUPLE, 3
-                };
-                driver_output_term(port, term, sizeof term/sizeof *term);
-            }
+            Acceptor& acc = acceptor_queue.front();
+            ErlDrvTermData term[] = {
+                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
+                ERL_DRV_PORT, driver_mk_port(port),
+                ERL_DRV_EXT2TERM, acc.ref, acc.ref.size(),
+                ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("error")),
+                ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(err)),
+                ERL_DRV_TUPLE, 2,
+                ERL_DRV_TUPLE, 4,
+            };
+            driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
+            acceptor_queue.pop_front();
             return;
         }
     }
@@ -133,59 +135,20 @@ UtpDrv::Listener::input_ready()
                                    buf, len, from, from.slen);
     }
     if (is_utp) {
-        ErlDrvTermData new_port_owner = driver_connected(port);
-        Binary ref;
         Acceptor& acc = acceptor_queue.front();
-        new_port_owner = acc.caller;
-        ref.swap(acc.ref);
-        ErlDrvPort new_port = create_port(new_port_owner, server);
+        ErlDrvPort new_port = create_port(acc.caller, server);
         server->set_port(new_port);
         MainHandler::start_input(sock, server);
-        ErlDrvTermData term[sizeof(in6_addr) + 12] = {
+        ErlDrvTermData term[] = {
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
+            ERL_DRV_PORT, driver_mk_port(port),
+            ERL_DRV_EXT2TERM, acc.ref, acc.ref.size(),
+            ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
             ERL_DRV_PORT, driver_mk_port(new_port),
+            ERL_DRV_TUPLE, 2,
+            ERL_DRV_TUPLE, 4,
         };
-        int index = 4;
-        if (ref) {
-            term[index++] = ERL_DRV_EXT2TERM;
-            term[index++] = ref;
-            term[index++] = ref.size();
-            term[index++] = ERL_DRV_TUPLE;
-            term[index++] = 3;
-            driver_send_term(port, new_port_owner, term, index);
-        } else {
-            sockaddr* sa = from;
-            unsigned short addrport;
-            int addr_tuple_size;
-            if (sa->sa_family == AF_INET) {
-                sockaddr_in* sa_in = reinterpret_cast<sockaddr_in*>(sa);
-                addrport = ntohs(sa_in->sin_port);
-                uint8_t* pb = reinterpret_cast<uint8_t*>(&sa_in->sin_addr);
-                addr_tuple_size = sizeof(in_addr);
-                for (int i = 0; i < addr_tuple_size; ++i, index+=2) {
-                    term[index] = ERL_DRV_UINT;
-                    term[index+1] = *pb++;
-                }
-            } else {
-                sockaddr_in6* sa6 = reinterpret_cast<sockaddr_in6*>(sa);
-                addrport = ntohs(sa6->sin6_port);
-                uint16_t* pw = reinterpret_cast<uint16_t*>(&sa6->sin6_addr);
-                addr_tuple_size = sizeof(in6_addr)/sizeof(*pw);
-                for (int i = 0; i < addr_tuple_size; ++i, index+=2) {
-                    term[index] = ERL_DRV_UINT;
-                    term[index+1] = *pw++;
-                }
-            }
-            term[index++] = ERL_DRV_TUPLE;
-            term[index++] = addr_tuple_size;
-            term[index++] = ERL_DRV_UINT;
-            term[index++] = addrport;
-            term[index++] = ERL_DRV_TUPLE;
-            term[index++] = 2;
-            term[index++] = ERL_DRV_TUPLE;
-            term[index++] = 3;
-            driver_output_term(port, term, index);
-        }
+        driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
         acceptor_queue.pop_front();
     } else {
         ::close(sock);
@@ -231,18 +194,16 @@ UtpDrv::Listener::accept(const char* buf, ErlDrvSizeT len,
 {
     UTPDRV_TRACER << "Listener::accept " << this << UTPDRV_TRACE_ENDL;
     Acceptor acc;
-    if (len != 0) {
-        try {
-            EiDecoder decoder(buf, len);
-            int type, size;
-            decoder.type(type, size);
-            if (type != ERL_BINARY_EXT) {
-                return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
-            }
-            acc.ref.decode(decoder, size);
-        } catch (const EiError&) {
+    try {
+        EiDecoder decoder(buf, len);
+        int type, size;
+        decoder.type(type, size);
+        if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
+        acc.ref.decode(decoder, size);
+    } catch (const EiError&) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
     acc.caller = driver_caller(port);
     {
@@ -251,20 +212,34 @@ UtpDrv::Listener::accept(const char* buf, ErlDrvSizeT len,
     }
 
     EiEncoder encoder;
-    encoder.atom("ok");
+    encoder.tuple_header(2).atom("ok");
+    encoder.binary(acc.ref.data(), acc.ref.size());
     ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
     return encoder.copy_to_binary(binptr, rlen);
 }
 
 ErlDrvSSizeT
-UtpDrv::Listener::cancel_accept()
+UtpDrv::Listener::cancel_accept(const char* buf, ErlDrvSizeT len,
+                                char** rbuf, ErlDrvSizeT rlen)
 {
     UTPDRV_TRACER << "Listener::cancel_accept " << this << UTPDRV_TRACE_ENDL;
-    ErlDrvTermData caller = driver_caller(port);
+    Binary ref;
+    try {
+        EiDecoder decoder(buf, len);
+        int type, size;
+        decoder.type(type, size);
+        if (type != ERL_BINARY_EXT) {
+            return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+        }
+        ref.decode(decoder, size);
+    } catch (const EiError&) {
+        return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
+    }
+
     MutexLocker qlock(queue_mutex);
     AcceptorQueue::iterator it = acceptor_queue.begin();
     while (it != acceptor_queue.end()) {
-        if (it->caller == caller) {
+        if (it->ref == ref) {
             acceptor_queue.erase(it);
             break;
         }

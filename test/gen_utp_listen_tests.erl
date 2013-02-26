@@ -101,7 +101,7 @@ specific_interface() ->
 
 async_accept() ->
     {ok, LSock} = gen_utp:listen(0),
-    ?assertMatch(ok, gen_utp:async_accept(LSock)),
+    ?assertMatch({ok, _Ref}, gen_utp:async_accept(LSock)),
     ok.
 
 accept_timeout() ->

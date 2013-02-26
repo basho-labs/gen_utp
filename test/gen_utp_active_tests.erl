@@ -42,11 +42,11 @@ active_test_() ->
 
 active_false() ->
     {ok, LSock} = gen_utp:listen(0, [{mode,binary},{active,false}]),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     {ok, Sock} = gen_utp:connect("localhost", Port, [binary]),
     receive
-        {utp_async, ASock, _} ->
+        {utp_async, LSock, Ref, {ok, ASock}} ->
             Words = ["We", "make", "Riak,", "the", "most", "powerful",
                      "open-source,", "distributed", "database", "you'll",
                      "ever", "put", "into", "production."],
@@ -56,7 +56,9 @@ active_false() ->
             timer:sleep(500),
             ?assertMatch({ok, AllBin}, gen_utp:recv(ASock, 0, 2000)),
             ok = gen_utp:close(ASock),
-            ok = gen_utp:close(Sock)
+            ok = gen_utp:close(Sock);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         3000 -> exit(failure)
     end,
@@ -65,11 +67,11 @@ active_false() ->
 
 active_once() ->
     {ok, LSock} = gen_utp:listen(0, [{mode,list},{active,false},{packet,1}]),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     {ok, Sock} = gen_utp:connect("localhost", Port, [binary,{packet,1}]),
     receive
-        {utp_async, ASock, _} ->
+        {utp_async, LSock, Ref, {ok, ASock}} ->
             Words = ["We", "make", "Riak,", "the", "most", "powerful",
                      "open-source,", "distributed", "database", "you'll",
                      "ever", "put", "into", "production."],
@@ -93,7 +95,9 @@ active_once() ->
                 end,
             ?assertMatch(Words, F(F,[])),
             ok = gen_utp:close(ASock),
-            ok = gen_utp:close(Sock)
+            ok = gen_utp:close(Sock);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         3000 -> exit(failure)
     end,
@@ -102,11 +106,11 @@ active_once() ->
 
 active_true() ->
     {ok, LSock} = gen_utp:listen(0, [{mode,binary},{active,false}]),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     {ok, Sock} = gen_utp:connect("localhost", Port, [binary]),
     receive
-        {utp_async, ASock, _} ->
+        {utp_async, LSock, Ref, {ok, ASock}} ->
             ok = gen_utp:setopts(ASock, [{active,true}]),
             Words = ["We", "make", "Riak,", "the", "most", "powerful",
                      "open-source,", "distributed", "database", "you'll",
@@ -126,7 +130,9 @@ active_true() ->
                 end,
             ?assertMatch(AllBin, F(F,<<>>)),
             ok = gen_utp:close(ASock),
-            ok = gen_utp:close(Sock)
+            ok = gen_utp:close(Sock);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         3000 -> exit(failure)
     end,

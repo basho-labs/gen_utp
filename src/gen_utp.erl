@@ -108,19 +108,19 @@ accept(Sock, Timeout) ->
     Ref = make_ref(),
     Args = term_to_binary(term_to_binary(Ref)),
     case async_accept(Sock, Args) of
-        ok ->
+        {ok, Ref} ->
             receive
-                {utp_async, NewSock, Ref} ->
-                    {ok, NewSock}
+                {utp_async, Sock, Ref, {ok, _}=Reply} ->
+                    Reply
             after
                 Timeout ->
                     try
-                        erlang:port_control(Sock, ?UTP_CANCEL_ACCEPT, <<>>),
+                        erlang:port_control(Sock, ?UTP_CANCEL_ACCEPT, Args),
                         %% if the reply comes back while the cancel
                         %% call completes, return it
                         receive
-                            {utp_async, NewSock, Ref} ->
-                                {ok, NewSock}
+                            {utp_async, Sock, Ref, {ok, _}=Reply} ->
+                                Reply
                         after
                             0 ->
                                 {error, etimedout}
@@ -134,15 +134,20 @@ accept(Sock, Timeout) ->
             Error
     end.
 
--spec async_accept(utpsock()) -> ok | {error, any()}.
+-spec async_accept(utpsock()) -> {ok, reference()} | {error, any()}.
 async_accept(Sock) ->
-    async_accept(Sock, <<>>).
+    Ref = make_ref(),
+    Args = term_to_binary(term_to_binary(Ref)),
+    async_accept(Sock, Args).
 
--spec async_accept(utpsock(), binary()) -> ok | {error, any()}.
+-spec async_accept(utpsock(), binary()) -> {ok, reference()} | {error, any()}.
 async_accept(Sock, Args) ->
     try
         Result = erlang:port_control(Sock, ?UTP_ACCEPT, Args),
-        binary_to_term(Result)
+        case binary_to_term(Result) of
+            {ok, Bin} -> {ok, binary_to_term(Bin)};
+            Error -> Error
+        end
     catch
         error:badarg ->
             {error, einval}

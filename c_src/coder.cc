@@ -110,6 +110,15 @@ UtpDrv::EiEncoder::binary(const void* buf, long len)
     return *this;
 }
 
+EiEncoder&
+UtpDrv::EiEncoder::append_buf(const char* buf, int len)
+{
+    if (ei_x_append_buf(this, buf, len) != 0) {
+        throw EiError();
+    }
+    return *this;
+}
+
 const char*
 UtpDrv::EiEncoder::buffer(int& len) const
 {

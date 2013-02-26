@@ -2,7 +2,7 @@
 //
 // drv_types.h: wrap Erlang driver types for uTP driver
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -103,6 +103,21 @@ size_t
 UtpDrv::Binary::size() const
 {
     return bin != 0 ? bin->orig_size : 0;
+}
+
+bool
+UtpDrv::Binary::operator==(const Binary& b) const
+{
+    if (b.bin == 0) {
+        return bin == 0;
+    }
+    if (bin == 0) {
+        return false;
+    }
+    if (b.bin->orig_size != bin->orig_size) {
+        return false;
+    }
+    return memcmp(b.bin->orig_bytes, bin->orig_bytes, bin->orig_size) == 0;
 }
 
 UtpDrv::Binary::operator ErlDrvTermData() const

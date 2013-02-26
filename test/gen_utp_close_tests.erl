@@ -39,10 +39,10 @@ close_test_() ->
 close_client() ->
     {ok, LSock} = gen_utp:listen(0),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     {ok, Sock} = gen_utp:connect("localhost", Port),
     receive
-        {utp_async, ASock, _} ->
+        {utp_async, LSock, Ref, {ok, ASock}} ->
             ok = gen_utp:close(Sock),
             receive
                 {utp_closed, ASock} ->
@@ -50,7 +50,9 @@ close_client() ->
             after
                 2000 ->
                     exit(server_not_closed)
-            end
+            end;
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         2000 ->
             exit(async_accept_fail)
@@ -61,10 +63,10 @@ close_client() ->
 close_server() ->
     {ok, LSock} = gen_utp:listen(0),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     {ok, Sock} = gen_utp:connect("localhost", Port),
     receive
-        {utp_async, ASock, _} ->
+        {utp_async, LSock, Ref, {ok, ASock}} ->
             ok = gen_utp:close(ASock),
             receive
                 {utp_closed, Sock} ->
@@ -72,7 +74,9 @@ close_server() ->
             after
                 2000 ->
                     exit(client_not_closed)
-            end
+            end;
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         2000 ->
             exit(async_accept_fail)

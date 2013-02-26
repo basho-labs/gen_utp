@@ -89,13 +89,14 @@ simple_connect_server(Client, Ref) ->
     Opts = [{mode,binary}],
     {ok, LSock} = gen_utp:listen(0, Opts),
     Client ! gen_utp:sockname(LSock),
-    ok = gen_utp:async_accept(LSock),
+    {ok, ARef} = gen_utp:async_accept(LSock),
     receive
-        {utp_async, Sock, {Addr, Port}} ->
+        {utp_async, LSock, ARef, {ok, Sock}} ->
             ?assertMatch(true, is_port(Sock)),
-            ?assertMatch(true, is_tuple(Addr)),
-            ?assertMatch(true, is_number(Port)),
-            ?assertMatch(ok, gen_utp:close(Sock))
+            ?assertMatch(true, is_reference(Ref)),
+            ?assertMatch(ok, gen_utp:close(Sock));
+        {utp_async, LSock, ARef, Error} ->
+            exit({utp_async, Error})
     after
         3000 -> exit(failure)
     end,
@@ -329,22 +330,26 @@ two_servers(Client, Ref) ->
     {ok, LSock} = gen_utp:listen(0, [{active,true}]),
     {ok, Sockname} = gen_utp:sockname(LSock),
     Client ! {Ref, Sockname},
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref1} = gen_utp:async_accept(LSock),
     Self = self(),
     Pid1 = spawn_link(fun() -> two_servers_do_server(Self) end),
     Pid2 = spawn_link(fun() -> two_servers_do_server(Self) end),
     receive
-        {utp_async, Sock1, {_, _}} ->
+        {utp_async, LSock, Ref1, {ok, Sock1}} ->
             ok = gen_utp:controlling_process(Sock1, Pid1),
-            Pid1 ! {go, Sock1}
+            Pid1 ! {go, Sock1};
+        {utp_async, LSock, Ref1, Error1} ->
+            exit({utp_async, Error1})
     after
         5000 -> exit(failure)
     end,
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref2} = gen_utp:async_accept(LSock),
     receive
-        {utp_async, Sock2, {_, _}} ->
+        {utp_async, LSock, Ref2, {ok, Sock2}} ->
             ok = gen_utp:controlling_process(Sock2, Pid2),
-            Pid2 ! {go, Sock2}
+            Pid2 ! {go, Sock2};
+        {utp_async, LSock, Ref2, Error2} ->
+            exit({utp_async, Error2})
     after
         5000 -> exit(failure)
     end,
@@ -355,13 +360,13 @@ two_servers(Client, Ref) ->
                 {Pid2, ok} ->
                     Pid1 ! check,
                     Pid2 ! check;
-                Error ->
-                    exit(Error)
+                Err2 ->
+                    exit(Err2)
             after
                 5000 -> exit(failure)
             end;
-        Error ->
-            exit(Error)
+        Err1 ->
+            exit(Err1)
     after
         5000 -> exit(failure)
     end,
@@ -428,7 +433,7 @@ two_server_client_receive(Sock, Msg) ->
 send_timeout() ->
     {ok, LSock} = gen_utp:listen(0),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     Pid = spawn(fun() ->
                         {ok,_} = gen_utp:connect("localhost", Port),
                         receive
@@ -437,13 +442,15 @@ send_timeout() ->
                         end
                 end),
     receive
-        {utp_async, S, _} ->
+        {utp_async, LSock, Ref, {ok, S}} ->
             Pid ! exit,
             ok = gen_utp:send(S, lists:duplicate(1000, $X)),
             ?assertMatch(ok, gen_utp:setopts(S, [{send_timeout, 1}])),
             ?assertMatch({error,etimedout},
                          gen_utp:send(S, lists:duplicate(1000, $Y))),
-            ok = gen_utp:close(S)
+            ok = gen_utp:close(S);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         2000 ->
             exit(failure)
@@ -453,7 +460,7 @@ send_timeout() ->
 invalid_accept() ->
     {ok, LSock} = gen_utp:listen(0),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     spawn(fun() ->
                   {ok,_} = gen_utp:connect("localhost", Port),
                   receive
@@ -462,9 +469,11 @@ invalid_accept() ->
                   end
           end),
     receive
-        {utp_async, S, _} ->
+        {utp_async, LSock, Ref, {ok, S}} ->
             ?assertMatch({error,einval}, gen_utp:accept(S)),
-            ok = gen_utp:close(S)
+            ok = gen_utp:close(S);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         2000 ->
             exit(failure)
@@ -483,12 +492,14 @@ packet_size() ->
                                         ok = gen_utp:send(S, Data),
                                         gen_utp:close(S)
                                 end),
-                          ok = gen_utp:async_accept(LSock),
+                          {ok, Ref} = gen_utp:async_accept(LSock),
                           receive
-                              {utp_async, S, _} ->
+                              {utp_async, LSock, Ref, {ok, S}} ->
                                   ok = gen_utp:setopts(S, [{packet,Pkt}]),
                                   ?assertMatch({ok,Data}, gen_utp:recv(S, 0, 2000)),
-                                  ok = gen_utp:close(S)
+                                  ok = gen_utp:close(S);
+                              {utp_async, LSock, Ref, Error} ->
+                                  exit({utp_async, Error})
                           after
                               2000 ->
                                   exit(failure)
@@ -501,16 +512,18 @@ header_size() ->
     {ok, LSock} = gen_utp:listen(0, [binary, {header,5}, {active,false}]),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
     Data = [ $B,$a,$s,$h,$o | <<"1234567890">> ],
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     spawn(fun() ->
                   {ok,S} = gen_utp:connect("localhost", Port, [binary, {header,5}]),
                   ok = gen_utp:send(S, Data),
                   gen_utp:close(S)
           end),
     receive
-        {utp_async, S, _} ->
+        {utp_async, LSock, Ref, {ok, S}} ->
             ?assertMatch({ok,Data}, gen_utp:recv(S, 0, 2000)),
-            ok = gen_utp:close(S)
+            ok = gen_utp:close(S);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         2000 ->
             exit(failure)
@@ -521,7 +534,7 @@ header_size() ->
 buf_size() ->
     {ok, LSock} = gen_utp:listen(0, [{sndbuf,4096},{recbuf,8192},{active,false}]),
     {ok, {_, Port}} = gen_utp:sockname(LSock),
-    ok = gen_utp:async_accept(LSock),
+    {ok, Ref} = gen_utp:async_accept(LSock),
     {ok,S} = gen_utp:connect("localhost", Port, [{active,false}]),
     {ok, [{sndbuf,Sndbuf}]} = gen_utp:getopts(S, [sndbuf]),
     {ok, [{recbuf,Recbuf}]} = gen_utp:getopts(S, [recbuf]),
@@ -531,10 +544,12 @@ buf_size() ->
     {ok, [{sndbuf,NSndbuf}]} = gen_utp:getopts(S, [sndbuf]),
     {ok, [{recbuf,NRecbuf}]} = gen_utp:getopts(S, [recbuf]),
     receive
-        {utp_async, AS, _} ->
+        {utp_async, LSock, Ref, {ok, AS}} ->
             ?assertMatch({ok,[{sndbuf,4096}]}, gen_utp:getopts(AS, [sndbuf])),
             ?assertMatch({ok,[{recbuf,8192}]}, gen_utp:getopts(AS, [recbuf])),
-            ok = gen_utp:close(AS)
+            ok = gen_utp:close(AS);
+        {utp_async, LSock, Ref, Error} ->
+            exit({utp_async, Error})
     after
         2000 ->
             exit(failure)

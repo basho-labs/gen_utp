@@ -61,7 +61,8 @@ protected:
     ErlDrvSSizeT accept(const char* buf, ErlDrvSizeT len,
                         char** rbuf, ErlDrvSizeT rlen);
 
-    ErlDrvSSizeT cancel_accept();
+    ErlDrvSSizeT cancel_accept(const char* buf, ErlDrvSizeT len,
+                               char** rbuf, ErlDrvSizeT rlen);
 
 private:
     struct Acceptor {

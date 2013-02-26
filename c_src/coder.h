@@ -48,6 +48,7 @@ public:
     EiEncoder& ulongval(unsigned long val);
     EiEncoder& longval(long val);
     EiEncoder& binary(const void* buf, long len);
+    EiEncoder& append_buf(const char* buf, int len);
 
     const char* buffer(int& len) const;
 
