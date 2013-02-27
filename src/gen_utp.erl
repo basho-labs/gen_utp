@@ -64,6 +64,7 @@
 -type utpport() :: inet:port_number().
 -type utpsock() :: port().
 -type utpdata() :: binary() | list().
+-export_type([utpaddr/0, utpport/0]).
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->

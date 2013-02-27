@@ -53,7 +53,9 @@
 -type utpgetoptname() :: active | mode | send_timeout |
                          packet | header | utpbuftype().
 -type utpgetoptnames() :: [utpgetoptname()].
-
+-export_type([utpactive/0, utpbufsize/0, utpfamily/0, utpgetoptnames/0,
+              utpheadersize/0, utpmode/0, utpopts/0, utppacketsize/0,
+              utptimeout/0]).
 
 -spec validate(utpopts()) -> #utp_options{}.
 validate(Opts) when is_list(Opts) ->
