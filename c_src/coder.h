@@ -25,6 +25,7 @@
 
 #include <cstddef>
 #include <exception>
+#include <string>
 #include "erl_driver.h"
 #include "ei.h"
 
@@ -33,6 +34,8 @@ namespace UtpDrv {
 
 struct EiError : public std::exception {};
 struct EiBufferTooSmall : public EiError {};
+
+class EiFun;
 
 class EiEncoder : public ei_x_buff
 {
@@ -44,11 +47,27 @@ public:
     EiEncoder& list_header(int arity);
     EiEncoder& empty_list();
     EiEncoder& atom(const char* a);
+    EiEncoder& atom(const char* a, int len);
+    EiEncoder& atom(const std::string& s);
+    EiEncoder& atom(const std::string& s, int len);
     EiEncoder& string(const char* str);
-    EiEncoder& ulongval(unsigned long val);
+    EiEncoder& string(const char* str, int len);
+    EiEncoder& string(const std::string& str);
+    EiEncoder& string(const std::string& str, int len);
     EiEncoder& longval(long val);
+    EiEncoder& ulongval(unsigned long val);
+    EiEncoder& longlongval(long long val);
+    EiEncoder& ulonglongval(unsigned long long val);
+    EiEncoder& doubleval(double val);
+    EiEncoder& boolval(bool val);
+    EiEncoder& charval(char val);
     EiEncoder& binary(const void* buf, long len);
-    EiEncoder& append_buf(const char* buf, int len);
+    EiEncoder& pid(const erlang_pid& p);
+    EiEncoder& fun(const EiFun& f);
+    EiEncoder& port(const erlang_port& p);
+    EiEncoder& ref(const erlang_ref& r);
+    EiEncoder& append(const EiEncoder&);
+    EiEncoder& append(const char* buf, int len);
 
     const char* buffer(int& len) const;
 
@@ -61,6 +80,10 @@ private:
     void operator=(const EiEncoder&);
 };
 
+
+
+
+
 class EiDecoder
 {
 public:
@@ -68,9 +91,23 @@ public:
     ~EiDecoder();
 
     EiDecoder& tuple_header(int& arity);
+    EiDecoder& list_header(int& arity);
+    EiDecoder& atom(char* val);
+    EiDecoder& atom(std::string& val);
     EiDecoder& string(char* str);
-    EiDecoder& ulong(unsigned long& val);
+    EiDecoder& string(std::string& str);
+    EiDecoder& longval(long& val);
+    EiDecoder& ulongval(unsigned long& val);
+    EiDecoder& longlongval(long long& val);
+    EiDecoder& ulonglongval(unsigned long long& val);
+    EiDecoder& doubleval(double& val);
+    EiDecoder& boolval(bool& val);
+    EiDecoder& charval(char& val);
     EiDecoder& binary(char* bin, long& size);
+    EiDecoder& pid(erlang_pid& p);
+    EiDecoder& fun(EiFun& f);
+    EiDecoder& port(erlang_port& p);
+    EiDecoder& ref(erlang_ref& r);
     EiDecoder& skip();
     EiDecoder& type(int& type, int& size);
 
@@ -82,6 +119,26 @@ private:
     // prevent copies
     EiDecoder(const EiDecoder&);
     void operator=(const EiDecoder&);
+};
+
+class EiFun : public erlang_fun
+{
+public:
+    EiFun() : allocated(false) {}
+    ~EiFun() {
+        if (allocated) {
+            free_fun(this);
+        }
+    }
+
+    friend class EiDecoder;
+
+private:
+    bool allocated;
+
+    // prevent copies
+    EiFun(const EiFun&);
+    void operator=(const EiFun&);
 };
 
 }

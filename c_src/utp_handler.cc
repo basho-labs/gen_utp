@@ -299,7 +299,7 @@ UtpDrv::UtpHandler::recv(const char* buf, ErlDrvSizeT len,
         if (arity != 2) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
-        decoder.ulong(length);
+        decoder.ulongval(length);
         decoder.type(type, size);
         if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);

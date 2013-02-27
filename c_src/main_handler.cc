@@ -239,7 +239,7 @@ UtpDrv::MainHandler::connect_start(const char* buf, ErlDrvSizeT len,
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
         decoder.string(addrstr);
-        decoder.ulong(addrport);
+        decoder.ulongval(addrport);
         decoder.type(type, size);
         if (type != ERL_BINARY_EXT) {
             return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
