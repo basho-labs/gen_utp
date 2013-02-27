@@ -79,12 +79,6 @@ UtpDrv::Listener::stop()
 }
 
 void
-UtpDrv::Listener::process_exit(ErlDrvMonitor* mon)
-{
-    UTPDRV_TRACER << "Listener::process_exit " << this << UTPDRV_TRACE_ENDL;
-}
-
-void
 UtpDrv::Listener::input_ready()
 {
     UTPDRV_TRACER << "Listener::input_ready " << this << UTPDRV_TRACE_ENDL;
@@ -122,6 +116,7 @@ UtpDrv::Listener::input_ready()
                 ERL_DRV_TUPLE, 4,
             };
             driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
+            MainHandler::del_monitor(acc.caller);
             acceptor_queue.pop_front();
             return;
         }
@@ -149,10 +144,26 @@ UtpDrv::Listener::input_ready()
             ERL_DRV_TUPLE, 4,
         };
         driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
+        MainHandler::del_monitor(acc.caller);
         acceptor_queue.pop_front();
     } else {
         ::close(sock);
         delete server;
+    }
+}
+
+void
+UtpDrv::Listener::process_exited(const ErlDrvMonitor* mon, ErlDrvTermData proc)
+{
+    UTPDRV_TRACER << "Listener::process_exited " << this << UTPDRV_TRACE_ENDL;
+    MutexLocker qlock(queue_mutex);
+    AcceptorQueue::iterator it = acceptor_queue.begin();
+    while (it != acceptor_queue.end()) {
+        if (it->caller == proc) {
+            it = acceptor_queue.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -206,16 +217,18 @@ UtpDrv::Listener::accept(const char* buf, ErlDrvSizeT len,
         return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
     }
     acc.caller = driver_caller(port);
-    {
-        MutexLocker qlock(queue_mutex);
-        acceptor_queue.push_back(acc);
+    if (MainHandler::add_monitor(acc.caller, this)) {
+        {
+            MutexLocker qlock(queue_mutex);
+            acceptor_queue.push_back(acc);
+        }
+        EiEncoder encoder;
+        encoder.tuple_header(2).atom("ok");
+        encoder.binary(acc.ref.data(), acc.ref.size());
+        ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
+        return encoder.copy_to_binary(binptr, rlen);
     }
-
-    EiEncoder encoder;
-    encoder.tuple_header(2).atom("ok");
-    encoder.binary(acc.ref.data(), acc.ref.size());
-    ErlDrvBinary** binptr = reinterpret_cast<ErlDrvBinary**>(rbuf);
-    return encoder.copy_to_binary(binptr, rlen);
+    return 0;
 }
 
 ErlDrvSSizeT

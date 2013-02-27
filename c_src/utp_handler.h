@@ -37,17 +37,11 @@ class UtpHandler : public SocketHandler
 public:
     ~UtpHandler();
 
-    void process_exit(ErlDrvMonitor* monitor);
-
     void outputv(ErlIOVec& ev);
 
     void stop();
 
-    virtual void
-    input_ready();
-
-    virtual void
-    process_exited(const ErlDrvMonitor* mon, ErlDrvTermData proc);
+    void input_ready();
 
     static void send_to(void* data, const byte* p, size_t len,
                         const sockaddr* to, socklen_t slen);

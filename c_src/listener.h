@@ -47,9 +47,9 @@ public:
 
     void stop();
 
-    void process_exit(ErlDrvMonitor* monitor);
-
     void input_ready();
+
+    void process_exited(const ErlDrvMonitor* mon, ErlDrvTermData proc);
 
 protected:
     ErlDrvSSizeT close(const char* buf, ErlDrvSizeT len,

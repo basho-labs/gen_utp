@@ -59,7 +59,7 @@ public:
     static void start_input(int fd, SocketHandler* handler);
     static void stop_input(int fd);
 
-    static void add_monitor(ErlDrvTermData proc, UtpHandler* h);
+    static bool add_monitor(ErlDrvTermData proc, Handler* h);
     static void del_monitor(ErlDrvTermData proc);
 
 private:
@@ -79,7 +79,7 @@ private:
 
     typedef std::map<int, SocketHandler*> FdMap;
     FdMap fdmap;
-    typedef std::map<ErlDrvMonitor, UtpHandler*, MonCompare> MonMap;
+    typedef std::map<ErlDrvMonitor, Handler*, MonCompare> MonMap;
     typedef std::map<ErlDrvTermData, ErlDrvMonitor> ProcMonMap;
     MonMap mon_map;
     ProcMonMap proc_mon_map;
@@ -94,7 +94,7 @@ private:
     void select(int fd, SocketHandler* handler);
     void deselect(int& fd);
 
-    void add_mon(ErlDrvTermData proc, UtpHandler* h);
+    bool add_mon(ErlDrvTermData proc, Handler* h);
     void del_mon(ErlDrvTermData proc);
 
     // prevent copies

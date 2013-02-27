@@ -69,6 +69,9 @@ public:
 
     virtual void set_port(ErlDrvPort p);
 
+    virtual void
+    process_exited(const ErlDrvMonitor* mon, ErlDrvTermData proc);
+
     void* operator new(size_t s);
     void operator delete(void* p);
 

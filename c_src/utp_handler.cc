@@ -58,15 +58,6 @@ UtpDrv::UtpHandler::input_ready()
 }
 
 void
-UtpDrv::UtpHandler::process_exited(const ErlDrvMonitor*, ErlDrvTermData proc)
-{
-    ErlDrvTermData connected = driver_connected(port);
-    if (proc == connected) {
-        driver_failure_eof(port);
-    }
-}
-
-void
 UtpDrv::UtpHandler::set_utp_callbacks()
 {
     UTPDRV_TRACER << "UtpHandler::set_utp_callbacks " << this << UTPDRV_TRACE_ENDL;

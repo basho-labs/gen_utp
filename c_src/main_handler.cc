@@ -134,7 +134,7 @@ void
 UtpDrv::MainHandler::process_exit(ErlDrvMonitor* monitor)
 {
     UTPDRV_TRACER << "MainHandler::process_exit\r\n";
-    UtpHandler* h = 0;
+    Handler* h = 0;
     ErlDrvTermData proc;
     {
         MutexLocker lock(map_mutex);
@@ -177,26 +177,27 @@ UtpDrv::MainHandler::stop_input(int fd)
     }
 }
 
-void
-UtpDrv::MainHandler::add_monitor(ErlDrvTermData proc, UtpHandler* h)
+bool
+UtpDrv::MainHandler::add_monitor(ErlDrvTermData proc, Handler* h)
 {
     UTPDRV_TRACER << "MainHandler::add_monitor\r\n";
-    if (main_handler != 0) {
-        main_handler->add_mon(proc, h);
-    }
+    return main_handler != 0 ? main_handler->add_mon(proc, h) : false;
 }
 
-void
-UtpDrv::MainHandler::add_mon(ErlDrvTermData proc, UtpHandler* h)
+bool
+UtpDrv::MainHandler::add_mon(ErlDrvTermData proc, Handler* h)
 {
     UTPDRV_TRACER << "MainHandler::add_mon\r\n";
     ErlDrvMonitor mon;
-    driver_monitor_process(port, proc, &mon);
-    MonMap::value_type v1(mon, h);
-    ProcMonMap::value_type v2(proc, mon);
-    MutexLocker lock(map_mutex);
-    mon_map.insert(v1);
-    proc_mon_map.insert(v2);
+    bool result = (driver_monitor_process(port, proc, &mon) == 0);
+    if (result) {
+        MonMap::value_type v1(mon, h);
+        ProcMonMap::value_type v2(proc, mon);
+        MutexLocker lock(map_mutex);
+        mon_map.insert(v1);
+        proc_mon_map.insert(v2);
+    }
+    return result;
 }
 
 void

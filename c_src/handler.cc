@@ -48,6 +48,15 @@ UtpDrv::Handler::set_port(ErlDrvPort p)
     port_status = port_started;
 }
 
+void
+UtpDrv::Handler::process_exited(const ErlDrvMonitor*, ErlDrvTermData proc)
+{
+    ErlDrvTermData connected = driver_connected(port);
+    if (proc == connected) {
+        driver_failure_eof(port);
+    }
+}
+
 void*
 UtpDrv::Handler::operator new(size_t s)
 {
