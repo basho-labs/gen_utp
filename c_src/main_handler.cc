@@ -32,7 +32,7 @@
 
 using namespace UtpDrv;
 
-const unsigned long timeout_check = 100;
+const unsigned long timeout_check = 10;
 
 UtpDrv::MainHandler* UtpDrv::MainHandler::main_handler = 0;
 
