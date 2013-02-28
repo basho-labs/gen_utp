@@ -176,7 +176,7 @@ protected:
     ReadCount read_count;
     SockOpts sockopts;
     int udp_sock;
-    bool close_pending;
+    bool close_pending, selected;
 };
 
 }

@@ -33,7 +33,7 @@
 #else
 #define UTPDRV_TRACER if (true) ; else std::cerr
 #endif
-#define UTPDRV_TRACE_ENDL UtpDrv::endl
+#define UTPDRV_TRACE_ENDL "\r" << std::endl
 
 namespace UtpDrv {
 
@@ -42,8 +42,6 @@ const int INVALID_SOCKET = -1;
 extern char* drv_name;
 
 extern ErlDrvMutex* utp_mutex;
-
-const char* const endl = "\r\n";
 
 }
 

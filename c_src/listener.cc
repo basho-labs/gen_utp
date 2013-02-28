@@ -74,7 +74,10 @@ void
 UtpDrv::Listener::stop()
 {
     UTPDRV_TRACER << "Listener::stop " << this << UTPDRV_TRACE_ENDL;
-    MainHandler::stop_input(udp_sock);
+    if (selected) {
+        MainHandler::stop_input(udp_sock);
+        selected = false;
+    }
     delete this;
 }
 
@@ -106,6 +109,7 @@ UtpDrv::Listener::input_ready()
             int err = errno;
             ::close(sock);
             Acceptor& acc = acceptor_queue.front();
+            MainHandler::del_monitor(acc.caller);
             ErlDrvTermData term[] = {
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
                 ERL_DRV_PORT, driver_mk_port(port),
@@ -116,7 +120,6 @@ UtpDrv::Listener::input_ready()
                 ERL_DRV_TUPLE, 4,
             };
             driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
-            MainHandler::del_monitor(acc.caller);
             acceptor_queue.pop_front();
             return;
         }
@@ -131,9 +134,9 @@ UtpDrv::Listener::input_ready()
     }
     if (is_utp) {
         Acceptor& acc = acceptor_queue.front();
+        MainHandler::del_monitor(acc.caller);
         ErlDrvPort new_port = create_port(acc.caller, server);
         server->set_port(new_port);
-        MainHandler::start_input(sock, server);
         ErlDrvTermData term[] = {
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
             ERL_DRV_PORT, driver_mk_port(port),
@@ -144,7 +147,6 @@ UtpDrv::Listener::input_ready()
             ERL_DRV_TUPLE, 4,
         };
         driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
-        MainHandler::del_monitor(acc.caller);
         acceptor_queue.pop_front();
     } else {
         ::close(sock);
@@ -253,6 +255,7 @@ UtpDrv::Listener::cancel_accept(const char* buf, ErlDrvSizeT len,
     AcceptorQueue::iterator it = acceptor_queue.begin();
     while (it != acceptor_queue.end()) {
         if (it->ref == ref) {
+            MainHandler::del_monitor(it->caller);
             acceptor_queue.erase(it);
             break;
         }

@@ -61,6 +61,7 @@ public:
 
     static bool add_monitor(ErlDrvTermData proc, Handler* h);
     static void del_monitor(ErlDrvTermData proc);
+    static void del_monitors(Handler* h);
 
 private:
     // MainHandler singleton
@@ -96,6 +97,7 @@ private:
 
     bool add_mon(ErlDrvTermData proc, Handler* h);
     void del_mon(ErlDrvTermData proc);
+    void del_mons(Handler* h);
 
     // prevent copies
     MainHandler(const MainHandler&);

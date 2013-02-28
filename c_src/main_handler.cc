@@ -60,16 +60,17 @@ UtpDrv::MainHandler::driver_finish()
     UTPDRV_TRACER << "MainHandler::driver_finish\r\n";
     erl_drv_mutex_destroy(utp_mutex);
     delete main_handler;
+    main_handler = 0;
 }
 
 void
 UtpDrv::MainHandler::check_utp_timeouts() const
 {
-    {
+    if (main_handler != 0) {
         MutexLocker lock(utp_mutex);
         UTP_CheckTimeouts();
+        driver_set_timer(port, timeout_check);
     }
-    driver_set_timer(port, timeout_check);
 }
 
 ErlDrvSSizeT
@@ -210,6 +211,15 @@ UtpDrv::MainHandler::del_monitor(ErlDrvTermData proc)
 }
 
 void
+UtpDrv::MainHandler::del_monitors(Handler* h)
+{
+    UTPDRV_TRACER << "MainHandler::del_monitor\r\n";
+    if (main_handler != 0) {
+        main_handler->del_mons(h);
+    }
+}
+
+void
 UtpDrv::MainHandler::del_mon(ErlDrvTermData proc)
 {
     UTPDRV_TRACER << "MainHandler::del_mon\r\n";
@@ -219,6 +229,32 @@ UtpDrv::MainHandler::del_mon(ErlDrvTermData proc)
         driver_demonitor_process(port, &it->second);
         mon_map.erase(it->second);
         proc_mon_map.erase(it);
+    }
+}
+
+void
+UtpDrv::MainHandler::del_mons(Handler* h)
+{
+    if (h != this) {
+        UTPDRV_TRACER << "MainHandler::del_mons\r\n";
+        MutexLocker lock(map_mutex);
+        MonMap::iterator it = mon_map.begin();
+        while (it != mon_map.end()) {
+            if (it->second == h) {
+                ProcMonMap::iterator itp = proc_mon_map.begin();
+                while (itp != proc_mon_map.end()) {
+                    if (driver_compare_monitors(&it->first, &itp->second) == 0) {
+                        driver_demonitor_process(port, &it->first);
+                        proc_mon_map.erase(itp++);
+                    } else {
+                        ++itp;
+                    }
+                }
+                mon_map.erase(it++);
+            } else {
+                ++it;
+            }
+        }
     }
 }
 
@@ -294,7 +330,6 @@ UtpDrv::MainHandler::connect_start(const char* buf, ErlDrvSizeT len,
         Client* client = new Client(udp_sock, opts, ref);
         ErlDrvPort new_port = create_port(caller, client);
         client->set_port(new_port);
-        select(udp_sock, client);
         client->connect_to(addr);
         {
             ErlDrvTermData term[] = {
@@ -370,7 +405,6 @@ UtpDrv::MainHandler::listen(const char* buf, ErlDrvSizeT len,
         Listener* listener = new Listener(udp_sock, opts);
         ErlDrvPort new_port = create_port(caller, listener);
         listener->set_port(new_port);
-        select(udp_sock, listener);
         ErlDrvTermData term[] = {
             ERL_DRV_EXT2TERM, ref, ref.size(),
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),

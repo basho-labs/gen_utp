@@ -112,7 +112,7 @@ protected:
     ErlDrvSizeT recv_len;
     UtpPortStatus status;
     int state, error_code;
-    bool writable, sender_waiting, receiver_waiting;
+    bool writable, sender_waiting, receiver_waiting, eof_seen;
 };
 
 }

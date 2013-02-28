@@ -33,7 +33,8 @@ using namespace UtpDrv;
 UtpDrv::UtpHandler::UtpHandler(int sock, const SockOpts& so) :
     SocketHandler(sock, so),
     caller(driver_term_nil), utp(0), recv_len(0), status(not_connected), state(0),
-    error_code(0), writable(false), sender_waiting(false), receiver_waiting(false)
+    error_code(0), writable(false), sender_waiting(false), receiver_waiting(false),
+    eof_seen(false)
 {
 }
 
@@ -229,6 +230,14 @@ UtpDrv::UtpHandler::stop()
         delete this;
     } else {
         status = stopped;
+        if (selected) {
+            // TODO: this is bad -- the port is closing but our udp socket
+            // is still in the driver select set. We can't deselect it here
+            // because there might still be uTP traffic occurring between
+            // our utp socket and the remote side.
+            UTPDRV_TRACER << "UtpHandler::stop: deselecting "
+                          << udp_sock << " for " << this << UTPDRV_TRACE_ENDL;
+        }
     }
 }
 
@@ -253,28 +262,31 @@ ErlDrvSSizeT
 UtpDrv::UtpHandler::close(const char* buf, ErlDrvSizeT len,
                           char** rbuf, ErlDrvSizeT rlen)
 {
-    UTPDRV_TRACER << "UtpHandler::close " << this << UTPDRV_TRACE_ENDL;
+    UTPDRV_TRACER << "UtpHandler::close " << this
+                  << ", status = " << status << ", close pending = "
+                  << close_pending << ", eof_seen = " << eof_seen
+                  << UTPDRV_TRACE_ENDL;
     const char* retval = "ok";
-    if (!close_pending && status != closing && status != destroying) {
+    if (!close_pending &&
+        (eof_seen || (status != closing && status != destroying))) {
         MutexLocker lock(utp_mutex);
         status = closing;
         close_pending = true;
-        if (utp != 0) {
-            try {
-                EiDecoder decoder(buf, len);
-                int type, size;
-                decoder.type(type, size);
-                if (type != ERL_BINARY_EXT) {
-                    return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
-                }
-                caller_ref.decode(decoder, size);
-            } catch (const EiError&) {
+        eof_seen = false;
+        try {
+            EiDecoder decoder(buf, len);
+            int type, size;
+            decoder.type(type, size);
+            if (type != ERL_BINARY_EXT) {
                 return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
             }
-            caller = driver_caller(port);
-            retval = "wait";
-            close_utp();
+            caller_ref.decode(decoder, size);
+        } catch (const EiError&) {
+            return reinterpret_cast<ErlDrvSSizeT>(ERL_DRV_ERROR_BADARG);
         }
+        caller = driver_caller(port);
+        retval = "wait";
+        close_utp();
     }
     EiEncoder encoder;
     encoder.atom(retval);
@@ -449,6 +461,7 @@ UtpDrv::UtpHandler::do_state_change(int s)
             close_utp();
         }
         writable = false;
+        eof_seen = true;
         break;
 
     case UTP_STATE_WRITABLE:
@@ -488,9 +501,17 @@ UtpDrv::UtpHandler::do_state_change(int s)
         break;
 
     case UTP_STATE_DESTROYING:
-        MainHandler::stop_input(udp_sock);
+        if (selected) {
+            UTPDRV_TRACER << "UtpHandler::do_state_change: deselecting "
+                          << udp_sock << " for " << this << UTPDRV_TRACE_ENDL;
+            MainHandler::stop_input(udp_sock);
+            selected = false;
+        }
         if (status == closing) {
             if (close_pending && caller_ref) {
+                UTPDRV_TRACER << "UtpHandler::do_state_change: "
+                              << "sending close message to caller for " << this
+                              << UTPDRV_TRACE_ENDL;
                 ErlDrvTermData term[] = {
                     ERL_DRV_EXT2TERM, caller_ref, caller_ref.size(),
                     ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
@@ -508,6 +529,7 @@ UtpDrv::UtpHandler::do_state_change(int s)
             }
             writable = false;
             status = destroying;
+            eof_seen = false;
         } else if (status == stopped) {
             delete this;
         }

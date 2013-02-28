@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include "socket_handler.h"
+#include "main_handler.h"
 #include "globals.h"
 #include "utils.h"
 #include "locker.h"
@@ -33,15 +34,16 @@ using namespace UtpDrv;
 
 UtpDrv::SocketHandler::~SocketHandler()
 {
+    MainHandler::del_monitors(this);
 }
 
 UtpDrv::SocketHandler::SocketHandler() :
-    udp_sock(INVALID_SOCKET), close_pending(false)
+    udp_sock(INVALID_SOCKET), close_pending(false), selected(false)
 {
 }
 
 UtpDrv::SocketHandler::SocketHandler(int fd, const SockOpts& so) :
-    sockopts(so), udp_sock(fd), close_pending(false)
+    sockopts(so), udp_sock(fd), close_pending(false), selected(false)
 {
 }
 
@@ -50,6 +52,10 @@ UtpDrv::SocketHandler::set_port(ErlDrvPort p)
 {
     UTPDRV_TRACER << "SocketHandler::set_port " << this << UTPDRV_TRACE_ENDL;
     Handler::set_port(p);
+    if (!selected) {
+        MainHandler::start_input(udp_sock, this);
+        selected = true;
+    }
 }
 
 int
