@@ -339,9 +339,9 @@ UtpDrv::SocketHandler::emit_read_buffer(ErlDrvSizeT len,
             read_count.pop_front();
             new_qsize = move_read_data(vec, vlen, buf, pkt_size);
         }
+        int index = 0;
+        ErlDrvTermData term[2*sockopts.header+14];
         if (receiver.send_to_connected) {
-            int index = 0;
-            ErlDrvTermData term[2*sockopts.header+11];
             term[index++] = ERL_DRV_ATOM;
             term[index++] = driver_mk_atom(const_cast<char*>("utp"));
             term[index++] = ERL_DRV_PORT;
@@ -366,8 +366,6 @@ UtpDrv::SocketHandler::emit_read_buffer(ErlDrvSizeT len,
             term[index++] = 3;
             driver_output_term(port, term, index);
         } else {
-            int index = 0;
-            ErlDrvTermData term[2*sockopts.header+14];
             term[index++] = ERL_DRV_EXT2TERM;
             term[index++] = receiver.caller_ref;
             term[index++] = receiver.caller_ref.size();
