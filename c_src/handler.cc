@@ -26,12 +26,13 @@
 
 using namespace UtpDrv;
 
-UtpDrv::Handler::Handler() : port(0), port_status(port_not_started)
+UtpDrv::Handler::Handler() : port(0)
 {
 }
 
-UtpDrv::Handler::Handler(ErlDrvPort p) : port(p), port_status(port_started)
+UtpDrv::Handler::Handler(ErlDrvPort p)
 {
+    set_port(p);
 }
 
 UtpDrv::Handler::~Handler()
@@ -45,7 +46,6 @@ UtpDrv::Handler::set_port(ErlDrvPort p)
     UTPDRV_TRACER << "Handler::set_port " << this << UTPDRV_TRACE_ENDL;
     port = p;
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
-    port_status = port_started;
 }
 
 void

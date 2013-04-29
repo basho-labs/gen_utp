@@ -79,14 +79,7 @@ protected:
     Handler();
     explicit Handler(ErlDrvPort p);
 
-    enum PortStatus {
-        port_not_started,
-        port_started,
-        port_stopped
-    };
-
     ErlDrvPort port;
-    PortStatus port_status;
 };
 
 }
