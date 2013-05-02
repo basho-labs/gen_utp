@@ -42,7 +42,9 @@ listen_test_() ->
                {"async accept test",
                 fun async_accept/0},
                {"accept timeout test",
-                fun accept_timeout/0}
+                fun accept_timeout/0},
+               {"concurrent accepts",
+                fun concurrent_accepts/0}
               ]}
      end}.
 
@@ -108,3 +110,50 @@ accept_timeout() ->
     {ok, LSock} = gen_utp:listen(0),
     ?assertMatch({error, etimedout}, gen_utp:accept(LSock, 2000)),
     ok.
+
+concurrent_accepts() ->
+    Self = self(),
+    Count = 1000,
+    Servers = [spawn(fun() -> server() end) || _ <- lists:seq(1,Count)],
+    Clients = [spawn(fun() -> client(Server, Self) end) || Server <- Servers],
+    Results = lists:map(fun(_) ->
+                                receive
+                                    done -> done;
+                                    _ -> exit({error, unexpected_message})
+                                after
+                                    5000 ->
+                                        exit({error, missing_client})
+                                end
+                        end, Clients),
+    ?assert(lists:all(fun(R) -> R =:= done end, Results)),
+    ok.
+
+server() ->
+    {ok,LS} = gen_utp:listen(0),
+    {ok,{_,Port}} = gen_utp:sockname(LS),
+    {ok,Ref} = gen_utp:async_accept(LS),
+    server(LS, Port, Ref).
+
+server(LS, Port, Ref) ->
+    receive
+        {port, Pid} ->
+            Pid ! {self(), Port},
+            server(LS, Port, Ref);
+        {utp_async,LS,Ref,{ok,S}} ->
+            ?assert(is_port(S)),
+            gen_utp:close(S);
+        _ ->
+            exit({error, unknown_message})
+    end.
+
+client(Pid, Parent) ->
+    Pid ! {port, self()},
+    receive
+        {Pid, Port} ->
+            {ok,S} = gen_utp:connect("127.0.0.1", Port, [binary]),
+            gen_utp:close(S),
+            Parent ! done
+    after
+        5000 ->
+            exit({error, client_timeout})
+    end.
