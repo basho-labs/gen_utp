@@ -26,6 +26,13 @@
 #include <iostream>
 #include "erl_driver.h"
 
+#if ERL_DRV_EXTENDED_MAJOR_VERSION >= 2 && ERL_DRV_EXTENDED_MINOR_VERSION >= 1
+#define utp_output_term(P,T,N) erl_drv_output_term(driver_mk_port(P),T,N)
+#define utp_send_term(P,R,T,N) erl_drv_send_term(driver_mk_port(P),R,T,N)
+#else
+#define utp_output_term(P,T,N) driver_output_term(P,T,N)
+#define utp_send_term(P,R,T,N) driver_send_term(P,R,T,N)
+#endif
 
 #define UTPDRV_DEBUG 0
 #if UTPDRV_DEBUG

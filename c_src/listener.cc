@@ -119,12 +119,13 @@ UtpDrv::Listener::input_ready()
                 ERL_DRV_TUPLE, 2,
                 ERL_DRV_TUPLE, 4,
             };
-            driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
+            utp_send_term(port, acc.caller, term, sizeof term/sizeof *term);
             acceptor_queue.pop_front();
             return;
         }
     }
     Server* server = new Server(sock, sockopts);
+    MainHandler* mh = new MainHandler(server);
     bool is_utp;
     {
         MutexLocker lock(utp_mutex);
@@ -135,7 +136,10 @@ UtpDrv::Listener::input_ready()
     if (is_utp) {
         Acceptor& acc = acceptor_queue.front();
         MainHandler::del_monitor(acc.caller);
-        ErlDrvPort new_port = create_port(acc.caller, server);
+        ErlDrvData port_drv_data = reinterpret_cast<ErlDrvData>(mh);
+        ErlDrvPort new_port = driver_create_port(MainHandler::drv_port(),
+                                                 acc.caller, drv_name,
+                                                 port_drv_data);
         server->set_port(new_port);
         ErlDrvTermData term[] = {
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("utp_async")),
@@ -146,11 +150,12 @@ UtpDrv::Listener::input_ready()
             ERL_DRV_TUPLE, 2,
             ERL_DRV_TUPLE, 4,
         };
-        driver_send_term(port, acc.caller, term, sizeof term/sizeof *term);
+        utp_send_term(port, acc.caller, term, sizeof term/sizeof *term);
         acceptor_queue.pop_front();
     } else {
         ::close(sock);
         delete server;
+        delete mh;
     }
 }
 

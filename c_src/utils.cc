@@ -67,15 +67,6 @@ UtpDrv::encode_error(char** rbuf, ErlDrvSizeT rlen, int error)
     return encode_error(rbuf, rlen, erl_errno_id(error));
 }
 
-ErlDrvPort
-UtpDrv::create_port(ErlDrvTermData owner, SocketHandler* h)
-{
-    ErlDrvData port_drv_data = reinterpret_cast<ErlDrvData>(h);
-    ErlDrvPort new_port = driver_create_port(MainHandler::drv_port(), owner,
-                                             drv_name, port_drv_data);
-    return new_port;
-}
-
 void
 UtpDrv::send_not_connected(ErlDrvPort port)
 {
@@ -88,7 +79,7 @@ UtpDrv::send_not_connected(ErlDrvPort port)
         ERL_DRV_TUPLE, 2,
         ERL_DRV_TUPLE, 3,
     };
-    driver_send_term(port, caller, term, sizeof term/sizeof *term);
+    utp_send_term(port, caller, term, sizeof term/sizeof *term);
 }
 
 UtpDrv::NoMemError::NoMemError() : bin(0)

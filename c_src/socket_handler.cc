@@ -364,7 +364,7 @@ UtpDrv::SocketHandler::emit_read_buffer(ErlDrvSizeT len,
             }
             term[index++] = ERL_DRV_TUPLE;
             term[index++] = 3;
-            driver_output_term(port, term, index);
+            utp_output_term(port, term, index);
         } else {
             term[index++] = ERL_DRV_EXT2TERM;
             term[index++] = receiver.caller_ref;
@@ -387,7 +387,7 @@ UtpDrv::SocketHandler::emit_read_buffer(ErlDrvSizeT len,
             term[index++] = 2;
             term[index++] = ERL_DRV_TUPLE;
             term[index++] = 2;
-            driver_send_term(port, receiver.caller, term, index);
+            utp_send_term(port, receiver.caller, term, index);
         }
         if (pkts_to_send != 0) {
             buf.clear();
@@ -446,7 +446,7 @@ UtpDrv::SocketHandler::emit_closed_message()
             ERL_DRV_PORT, driver_mk_port(port),
             ERL_DRV_TUPLE, 2,
         };
-        driver_output_term(port, term, sizeof term/sizeof *term);
+        utp_output_term(port, term, sizeof term/sizeof *term);
     }
     return qsize == 0;
 }

@@ -41,9 +41,6 @@ encode_error(char** rbuf, ErlDrvSizeT rlen, const char* error);
 extern ErlDrvSSizeT
 encode_error(char** rbuf, ErlDrvSizeT rlen, int error);
 
-extern ErlDrvPort
-create_port(ErlDrvTermData owner, SocketHandler* p);
-
 extern void
 send_not_connected(ErlDrvPort port);
 

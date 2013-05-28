@@ -58,6 +58,8 @@
 -define(UTP_RECV, 12).
 -define(UTP_CANCEL_RECV, 13).
 
+-define(SHLIB, "utpdrv").
+
 -type utpstate() :: #state{}.
 -type from() :: {pid(), any()}.
 -type utpaddr() :: inet:ip_address() | inet:hostname().
@@ -86,17 +88,18 @@ listen(Port) when Port >= 0, Port < 65536 ->
                                                    {error, any()}.
 listen(Port, Options) when Port >= 0, Port < 65536 ->
     ValidOpts = gen_utp_opts:validate([{port,Port}|Options]),
+    Sock = erlang:open_port({spawn_driver, ?SHLIB}, [binary]),
     OptBin = options_to_binary(ValidOpts),
-    try
-        Ref = make_ref(),
-        Args = term_to_binary({OptBin, term_to_binary(Ref)}),
-        erlang:port_control(utpdrv, ?UTP_LISTEN, Args),
-        receive
-            {Ref, Result} ->
-                Result
-        end
+    Args = term_to_binary(OptBin),
+    try binary_to_term(erlang:port_control(Sock, ?UTP_LISTEN, Args)) of
+        ok ->
+            {ok, Sock};
+        Error ->
+            erlang:port_close(Sock),
+            Error
     catch
         error:badarg ->
+            erlang:port_close(Sock),
             {error, einval}
     end.
 
@@ -185,20 +188,21 @@ connect(Addr, Port, Opts) when Port > 0, Port =< 65535 ->
             Err;
         _ ->
             ValidOpts = gen_utp_opts:validate(Opts),
+            Sock = erlang:open_port({spawn_driver, ?SHLIB}, [binary]),
             OptBin = options_to_binary(ValidOpts),
+            Args = term_to_binary({AddrStr, Port, OptBin}),
             try
-                Ref = make_ref(),
-                RefBin = term_to_binary(Ref),
-                Args = term_to_binary({AddrStr, Port, OptBin, RefBin}),
-                erlang:port_control(utpdrv, ?UTP_CONNECT_START, Args),
-                receive
-                    {Ref, {ok, Sock}} ->
+                Result = erlang:port_control(Sock, ?UTP_CONNECT_START, Args),
+                case binary_to_term(Result) of
+                    ok ->
                         validate_connect(Sock);
-                    {Ref, Result} ->
-                        Result
+                    ConnectError ->
+                        erlang:port_close(Sock),
+                        ConnectError
                 end
             catch
                 error:badarg ->
+                    erlang:port_close(Sock),
                     {error, closed}
             end
     end.
@@ -375,7 +379,6 @@ controlling_process(Sock, NewOwner) ->
 -spec init([]) -> ignore | {ok, utpstate()} | {stop, any()}.
 init([]) ->
     process_flag(trap_exit, true),
-    Shlib = "utpdrv",
     PrivDir = case code:priv_dir(?MODULE) of
                   {error, bad_name} ->
                       EbinDir = filename:dirname(code:which(?MODULE)),
@@ -384,19 +387,19 @@ init([]) ->
                   Path ->
                       Path
               end,
-    LoadResult = case erl_ddll:load_driver(PrivDir, Shlib) of
+    LoadResult = case erl_ddll:load_driver(PrivDir, ?SHLIB) of
                      ok -> ok;
                      {error, already_loaded} -> ok;
                      {error, LoadError} ->
                          LoadErrorStr = erl_ddll:format_error(LoadError),
                          EStr = lists:flatten(
                                   io_lib:format("could not load driver ~s: ~p",
-                                                [Shlib, LoadErrorStr])),
+                                                [?SHLIB, LoadErrorStr])),
                          {stop, EStr}
                  end,
     case LoadResult of
         ok ->
-            Port = erlang:open_port({spawn, Shlib}, [binary]),
+            Port = erlang:open_port({spawn, ?SHLIB}, [binary]),
             register(utpdrv, Port),
             {ok, #state{port=Port}};
         Error ->

@@ -174,7 +174,7 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
             ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
             ERL_DRV_TUPLE, 3,
         };
-        driver_send_term(port, local_caller, term, sizeof term/sizeof *term);
+        utp_send_term(port, local_caller, term, sizeof term/sizeof *term);
     } else {
         if (sockopts.send_tmout == 0) {
             ErlDrvTermData term[] = {
@@ -185,7 +185,7 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
                 ERL_DRV_TUPLE, 2,
                 ERL_DRV_TUPLE, 3,
             };
-            driver_send_term(port, local_caller, term, sizeof term/sizeof *term);
+            utp_send_term(port, local_caller, term, sizeof term/sizeof *term);
         } else {
             {
                 MutexLocker lock(utp_mutex);
@@ -209,7 +209,7 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
                 term[size++] = ERL_DRV_TUPLE;
                 term[size++] = 3;
             }
-            driver_send_term(port, local_caller, term, size);
+            utp_send_term(port, local_caller, term, size);
         }
     }
 }
@@ -479,7 +479,7 @@ UtpDrv::UtpHandler::do_state_change(int s)
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("retry")),
                 ERL_DRV_TUPLE, 3,
             };
-            driver_send_term(port, caller, term, sizeof term/sizeof *term);
+            utp_send_term(port, caller, term, sizeof term/sizeof *term);
             sender_waiting = false;
         }
         if (close_pending) {
@@ -494,7 +494,7 @@ UtpDrv::UtpHandler::do_state_change(int s)
                 ERL_DRV_ATOM, driver_mk_atom(const_cast<char*>("ok")),
                 ERL_DRV_TUPLE, 2,
             };
-            driver_output_term(port, term, sizeof term/sizeof *term);
+            utp_output_term(port, term, sizeof term/sizeof *term);
         }
         status = connected;
         writable = true;
@@ -518,9 +518,9 @@ UtpDrv::UtpHandler::do_state_change(int s)
                     ERL_DRV_TUPLE, 2,
                 };
                 if (caller != driver_term_nil) {
-                    driver_send_term(port, caller, term, sizeof term/sizeof *term);
+                    utp_send_term(port, caller, term, sizeof term/sizeof *term);
                 } else {
-                    driver_output_term(port, term, sizeof term/sizeof *term);
+                    utp_output_term(port, term, sizeof term/sizeof *term);
                 }
                 caller = driver_term_nil;
                 close_pending = false;
@@ -555,7 +555,7 @@ UtpDrv::UtpHandler::do_error(int errcode)
                 ERL_DRV_TUPLE, 2,
                 ERL_DRV_TUPLE, 2,
             };
-            driver_output_term(port, term, sizeof term/sizeof *term);
+            utp_output_term(port, term, sizeof term/sizeof *term);
         }
         break;
     case connected:
@@ -569,7 +569,7 @@ UtpDrv::UtpHandler::do_error(int errcode)
                 ERL_DRV_ATOM, driver_mk_atom(erl_errno_id(errcode)),
                 ERL_DRV_TUPLE, 3
             };
-            driver_output_term(port, term, sizeof term/sizeof *term);
+            utp_output_term(port, term, sizeof term/sizeof *term);
         }
         break;
     default:

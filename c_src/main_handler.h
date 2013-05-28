@@ -37,6 +37,7 @@ class MainHandler : public Handler
 {
 public:
     explicit MainHandler(ErlDrvPort p);
+    explicit MainHandler(Handler* delegatee);
     ~MainHandler();
 
     static int driver_init();
@@ -66,6 +67,7 @@ public:
 private:
     // MainHandler singleton
     static MainHandler* main_handler;
+    Handler* delegatee;
 
     ErlDrvTermData owner;
 

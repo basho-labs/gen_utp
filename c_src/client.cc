@@ -28,12 +28,11 @@
 
 using namespace UtpDrv;
 
-UtpDrv::Client::Client(int sock, const SockOpts& so, const Binary& ref) :
+UtpDrv::Client::Client(int sock, const SockOpts& so) :
     UtpHandler(sock, so)
 {
     UTPDRV_TRACER << "Client::Client " << this
                   << ", socket " << sock << UTPDRV_TRACE_ENDL;
-    caller_ref = ref;
 }
 
 UtpDrv::Client::~Client()

@@ -45,7 +45,9 @@ UtpDrv::Handler::set_port(ErlDrvPort p)
 {
     UTPDRV_TRACER << "Handler::set_port " << this << UTPDRV_TRACE_ENDL;
     port = p;
-    set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
+    if (port != 0) {
+        set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
+    }
 }
 
 void
