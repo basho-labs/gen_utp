@@ -121,6 +121,16 @@ UtpDrv::MainHandler::stop()
     MutexLocker lock(utp_mutex);
     if (main_handler == this) {
         main_handler = 0;
+        if (port != 0) {
+            FdMap::iterator it  = fdmap.begin();
+            FdMap::iterator end = fdmap.end();
+            while (it != end) {
+                int fd = it->first;
+                driver_select(port, reinterpret_cast<ErlDrvEvent>(fd),
+                              ERL_DRV_READ|ERL_DRV_USE, 0);
+                ++it;
+            }
+        }
         driver_cancel_timer(port);
         erl_drv_mutex_destroy(map_mutex);
     }
