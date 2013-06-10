@@ -150,13 +150,13 @@ UtpDrv::UtpHandler::outputv(ErlIOVec& ev)
             }
             for (int i = 0; i < ev.vsize; ++i) {
                 ErlDrvBinary* bin = 0;
-                if (ev.binv[i] != 0) {
-                    bin = ev.binv[i];
-                    driver_binary_inc_refc(bin);
-                } else if (ev.iov[i].iov_len > 0) {
+                if (ev.iov[i].iov_len > 0) {
                     const SysIOVec& vec = ev.iov[i];
                     bin = driver_alloc_binary(vec.iov_len);
                     memcpy(bin->orig_bytes, vec.iov_base, vec.iov_len);
+                } else if (ev.binv[i] != 0) {
+                    bin = ev.binv[i];
+                    driver_binary_inc_refc(bin);
                 }
                 if (bin != 0) {
                     write_queue.push_back(bin);
